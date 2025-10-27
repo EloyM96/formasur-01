@@ -1,0 +1,7 @@
+rules:
+  - id: vencido
+    description: "El certificado está vencido"
+    when: "today() > parse_date(row['certificate_expires_at'])"
+  - id: proximo
+    description: "Vence en <= 15 días"
+    when: "0 <= days_until(parse_date(row['certificate_expires_at'])) <= 15"
