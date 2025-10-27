@@ -1,11 +1,14 @@
 """Notification dispatcher that renders actions and orchestrates deliveries."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Iterable, Mapping, Protocol
+from uuid import uuid4
 
 from app.jobs.scheduler import Scheduler
+from app.logging import get_logger, job_context
 
 
 SAFE_EVAL_GLOBALS = {"__builtins__": {}}
@@ -33,6 +36,9 @@ class NotificationAuditEntry:
     payload: dict[str, Any]
     response: dict[str, Any] | None = None
     error: str | None = None
+    job_id: str | None = None
+    job_name: str | None = None
+    queue_name: str | None = None
 
 
 class NotificationAuditRepository(Protocol):
@@ -46,7 +52,9 @@ class AdapterNotFoundError(RuntimeError):
     """Raised when an action references a channel without a configured adapter."""
 
     def __init__(self, channel: str) -> None:
-        super().__init__(f"No existe un adaptador configurado para el canal '{channel}'")
+        super().__init__(
+            f"No existe un adaptador configurado para el canal '{channel}'"
+        )
         self.channel = channel
 
 
@@ -74,7 +82,9 @@ class _DotAccessor(dict):
 
 def _wrap_template_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return _DotAccessor({key: _wrap_template_value(val) for key, val in value.items()})
+        return _DotAccessor(
+            {key: _wrap_template_value(val) for key, val in value.items()}
+        )
     if isinstance(value, list):
         return [
             _wrap_template_value(item) if isinstance(item, (dict, list)) else item
@@ -114,6 +124,7 @@ class NotificationDispatcher:
         self._audit_repository = audit_repository
         self._job_name = job_name
         self._now = now_provider
+        self._logger = get_logger(__name__)
 
     def dispatch(
         self,
@@ -141,9 +152,15 @@ class NotificationDispatcher:
                 channel = str(rendered_action.get("channel", "default")).lower()
                 stats = summary.setdefault(
                     channel,
-                    {"matches": 0, "enqueued": 0, "skipped_quiet_hours": 0, "errors": 0},
+                    {
+                        "matches": 0,
+                        "enqueued": 0,
+                        "skipped_quiet_hours": 0,
+                        "errors": 0,
+                    },
                 )
                 stats["matches"] += 1
+                recipient = _string_or_none(rendered_action.get("to"))
 
                 if dry_run:
                     self._record_dry_run(playbook, rendered_action, item)
@@ -160,21 +177,27 @@ class NotificationDispatcher:
                             playbook=playbook,
                             channel=channel,
                             adapter=self._adapter_label(channel),
-                            recipient=_string_or_none(rendered_action.get("to")),
+                            recipient=recipient,
                             subject=_string_or_none(rendered_action.get("subject")),
                             status="quiet_hours",
-                            payload=self._prepare_payload(playbook, rendered_action, item),
+                            payload=self._prepare_payload(
+                                playbook, rendered_action, item
+                            ),
                         )
                     )
                     continue
 
                 if self._queue is None:
+                    job_id = self._generate_job_id()
                     try:
                         result = self.deliver(
                             playbook=playbook,
                             action=rendered_action,
                             row=dict(item.row),
                             rule_results=dict(item.rule_results),
+                            job_id=job_id,
+                            job_name=self._job_name,
+                            queue_name=self._queue_label(),
                             dry_run=False,
                         )
                     except (AdapterNotFoundError, NotificationDeliveryError):
@@ -186,13 +209,43 @@ class NotificationDispatcher:
                         stats["errors"] += 1
                     continue
 
+                job_id = self._generate_job_id()
                 payload = {
                     "playbook": playbook,
                     "action": rendered_action,
                     "row": dict(item.row),
                     "rule_results": dict(item.rule_results),
+                    "job_id": job_id,
                 }
-                self._queue.enqueue(self._job_name, kwargs=payload)
+                queue_name = self._queue_label()
+                self._queue.enqueue(self._job_name, kwargs=payload, job_id=job_id)
+                with job_context(
+                    job_id=job_id,
+                    job_name=self._job_name,
+                    queue_name=queue_name,
+                    channel=channel,
+                ):
+                    self._logger.info(
+                        "notification.queue.enqueued",
+                        playbook=playbook,
+                        recipient=recipient,
+                    )
+                audit_payload = self._prepare_payload(playbook, rendered_action, item)
+                audit_payload.setdefault("job_id", job_id)
+                self._record_audit(
+                    NotificationAuditEntry(
+                        playbook=playbook,
+                        channel=channel,
+                        adapter=self._adapter_label(channel),
+                        recipient=recipient,
+                        subject=_string_or_none(rendered_action.get("subject")),
+                        status="queued",
+                        payload=audit_payload,
+                        job_id=job_id,
+                        job_name=self._job_name,
+                        queue_name=queue_name,
+                    )
+                )
                 stats["enqueued"] += 1
         return summary
 
@@ -204,6 +257,9 @@ class NotificationDispatcher:
         row: Mapping[str, Any],
         rule_results: Mapping[str, Any],
         dry_run: bool = False,
+        job_id: str | None = None,
+        job_name: str | None = None,
+        queue_name: str | None = None,
     ) -> dict[str, Any]:
         """Deliver a single rendered *action* using the configured adapters."""
 
@@ -212,63 +268,113 @@ class NotificationDispatcher:
         adapter_name = self._adapter_name(adapter)
         recipient = _string_or_none(action.get("to"))
         subject = _string_or_none(action.get("subject"))
-        payload = self._prepare_payload(playbook, action, EvaluatedRow(row=row, rule_results=rule_results))
+        payload = self._prepare_payload(
+            playbook, action, EvaluatedRow(row=row, rule_results=rule_results)
+        )
+        job_identifier = job_id or self._generate_job_id()
+        job_label = job_name or self._job_name
+        queue_label = queue_name or self._queue_label()
 
-        if dry_run:
-            self._record_audit(
-                NotificationAuditEntry(
-                    playbook=playbook,
-                    channel=channel,
-                    adapter=adapter_name,
-                    recipient=recipient,
-                    subject=subject,
-                    status="dry_run",
-                    payload=payload,
+        with job_context(
+            job_id=job_identifier,
+            job_name=job_label,
+            queue_name=queue_label,
+            channel=channel,
+            adapter=adapter_name,
+        ):
+            self._logger.info(
+                "notification.deliver.start",
+                playbook=playbook,
+                dry_run=dry_run,
+                recipient=recipient,
+            )
+
+            if dry_run:
+                payload_with_job = dict(payload)
+                payload_with_job.setdefault("job_id", job_identifier)
+                self._record_audit(
+                    NotificationAuditEntry(
+                        playbook=playbook,
+                        channel=channel,
+                        adapter=adapter_name,
+                        recipient=recipient,
+                        subject=subject,
+                        status="dry_run",
+                        payload=payload_with_job,
+                        job_id=job_identifier,
+                        job_name=job_label,
+                        queue_name=queue_label,
+                    )
                 )
-            )
-            return {"status": "dry_run", "response": None}
+                self._logger.info("notification.deliver.dry_run", playbook=playbook)
+                return {"status": "dry_run", "response": None}
 
-        adapter_callable = getattr(adapter, "send", None) or adapter
-        try:
-            response = adapter_callable(
-                {
-                    "playbook": playbook,
-                    "action": dict(action),
-                    "context": {"row": dict(row), "rule_results": dict(rule_results)},
-                }
-            )
-        except AdapterNotFoundError:
-            raise
-        except Exception as exc:  # pragma: no cover - exercised in tests via failure
-            error_message = str(exc)
-            self._record_audit(
-                NotificationAuditEntry(
+            adapter_callable = getattr(adapter, "send", None) or adapter
+            try:
+                response = adapter_callable(
+                    {
+                        "playbook": playbook,
+                        "action": dict(action),
+                        "context": {
+                            "row": dict(row),
+                            "rule_results": dict(rule_results),
+                        },
+                    }
+                )
+            except AdapterNotFoundError:
+                raise
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - exercised in tests via failure
+                error_message = str(exc)
+                payload_with_job = dict(payload)
+                payload_with_job.setdefault("job_id", job_identifier)
+                self._record_audit(
+                    NotificationAuditEntry(
+                        playbook=playbook,
+                        channel=channel,
+                        adapter=adapter_name,
+                        recipient=recipient,
+                        subject=subject,
+                        status="error",
+                        payload=payload_with_job,
+                        error=error_message,
+                        job_id=job_identifier,
+                        job_name=job_label,
+                        queue_name=queue_label,
+                    )
+                )
+                self._logger.error(
+                    "notification.deliver.error",
                     playbook=playbook,
-                    channel=channel,
-                    adapter=adapter_name,
-                    recipient=recipient,
-                    subject=subject,
-                    status="error",
-                    payload=payload,
                     error=error_message,
                 )
-            )
-            raise NotificationDeliveryError(channel, adapter_name, exc) from exc
+                raise NotificationDeliveryError(channel, adapter_name, exc) from exc
 
-        response_mapping = _ensure_mapping(response)
-        self._record_audit(
-            NotificationAuditEntry(
-                playbook=playbook,
-                channel=channel,
-                adapter=adapter_name,
-                recipient=recipient,
-                subject=subject,
-                status="sent",
-                payload=payload,
-                response=response_mapping,
+            response_mapping = _ensure_mapping(response)
+            payload_with_job = dict(payload)
+            payload_with_job.setdefault("job_id", job_identifier)
+            self._record_audit(
+                NotificationAuditEntry(
+                    playbook=playbook,
+                    channel=channel,
+                    adapter=adapter_name,
+                    recipient=recipient,
+                    subject=subject,
+                    status="sent",
+                    payload=payload_with_job,
+                    response=response_mapping,
+                    job_id=job_identifier,
+                    job_name=job_label,
+                    queue_name=queue_label,
+                )
             )
-        )
-        return {"status": "sent", "response": response_mapping}
+            self._logger.info(
+                "notification.deliver.success",
+                playbook=playbook,
+                response_status=response_mapping.get("status"),
+            )
+            return {"status": "sent", "response": response_mapping}
 
     def _should_dispatch(self, condition: Any, context: Mapping[str, Any]) -> bool:
         if condition is None:
@@ -293,7 +399,9 @@ class NotificationDispatcher:
         if not expression:
             return True
         locals_env = {**SAFE_EVAL_LOCALS, **context}
-        return eval(expression, SAFE_EVAL_GLOBALS, locals_env)  # noqa: S307 - controlled
+        return eval(
+            expression, SAFE_EVAL_GLOBALS, locals_env
+        )  # noqa: S307 - controlled
 
     def _render_action(
         self, action: Mapping[str, Any], context: Mapping[str, Any]
@@ -368,7 +476,11 @@ class NotificationDispatcher:
                     subject=_string_or_none(action.get("subject")),
                     status="dry_run",
                     payload=self._prepare_payload(
-                        playbook, action, EvaluatedRow(row=dict(item.row), rule_results=dict(item.rule_results))
+                        playbook,
+                        action,
+                        EvaluatedRow(
+                            row=dict(item.row), rule_results=dict(item.rule_results)
+                        ),
                     ),
                     error="adaptador no configurado",
                 )
@@ -384,6 +496,20 @@ class NotificationDispatcher:
             "rule_results": dict(item.rule_results),
         }
         return _ensure_serializable(raw_payload)
+
+    def _queue_label(self) -> str | None:
+        if self._queue is None:
+            return "inline"
+        return getattr(self._queue, "name", None)
+
+    def _generate_job_id(self) -> str:
+        return uuid4().hex
+
+    @property
+    def job_name(self) -> str:
+        """Public accessor used by workers for logging context."""
+
+        return self._job_name
 
 
 def _ensure_mapping(value: Any) -> dict[str, Any]:

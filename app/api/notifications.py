@@ -1,4 +1,5 @@
 """Endpoints to explore notification audit trails."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -22,7 +23,10 @@ def list_notifications(
     playbook: str | None = Query(None, description="Filtra por playbook"),
     adapter: str | None = Query(None, description="Filtra por adaptador técnico"),
     recipient: str | None = Query(None, description="Filtra por destinatario exacto"),
-    search: str | None = Query(None, description="Criterio parcial sobre asunto o destinatario"),
+    job_id: str | None = Query(None, description="Filtra por identificador de job"),
+    search: str | None = Query(
+        None, description="Criterio parcial sobre asunto o destinatario"
+    ),
     date_from: str | None = Query(None, description="Fecha/hora mínima en ISO-8601"),
     date_to: str | None = Query(None, description="Fecha/hora máxima en ISO-8601"),
     limit: int = Query(50, ge=1, le=200),
@@ -36,6 +40,7 @@ def list_notifications(
     playbook = _unwrap_query(playbook)
     adapter = _unwrap_query(adapter)
     recipient = _unwrap_query(recipient)
+    job_id = _unwrap_query(job_id)
     search = _unwrap_query(search)
     date_from = _unwrap_query(date_from)
     date_to = _unwrap_query(date_to)
@@ -54,6 +59,8 @@ def list_notifications(
         query = query.filter(Notification.adapter == adapter)
     if recipient:
         query = query.filter(Notification.recipient == recipient)
+    if job_id:
+        query = query.filter(Notification.job_id == job_id)
     if search:
         like = f"%{search}%"
         query = query.filter(
@@ -71,10 +78,7 @@ def list_notifications(
 
     total = query.count()
     items = (
-        query.order_by(Notification.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+        query.order_by(Notification.created_at.desc()).offset(offset).limit(limit).all()
     )
 
     payload = [NotificationModel.model_validate(item).model_dump() for item in items]
@@ -85,16 +89,30 @@ def list_notifications(
 def metadata(session: Session = Depends(get_session)) -> dict[str, list[str]]:
     """Return distinct values used by the audit listings for UI helpers."""
 
-    channels = [row[0] for row in session.query(Notification.channel).distinct().all() if row[0]]
-    statuses = [row[0] for row in session.query(Notification.status).distinct().all() if row[0]]
-    adapters = [row[0] for row in session.query(Notification.adapter).distinct().all() if row[0]]
-    playbooks = [row[0] for row in session.query(Notification.playbook).distinct().all() if row[0]]
+    channels = [
+        row[0] for row in session.query(Notification.channel).distinct().all() if row[0]
+    ]
+    statuses = [
+        row[0] for row in session.query(Notification.status).distinct().all() if row[0]
+    ]
+    adapters = [
+        row[0] for row in session.query(Notification.adapter).distinct().all() if row[0]
+    ]
+    playbooks = [
+        row[0]
+        for row in session.query(Notification.playbook).distinct().all()
+        if row[0]
+    ]
+    job_ids = [
+        row[0] for row in session.query(Notification.job_id).distinct().all() if row[0]
+    ]
 
     return {
         "channels": sorted(channels),
         "statuses": sorted(statuses),
         "adapters": sorted(adapters),
         "playbooks": sorted(playbooks),
+        "jobs": sorted(job_ids),
     }
 
 

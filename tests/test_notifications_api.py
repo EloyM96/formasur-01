@@ -60,3 +60,4 @@ def test_list_notifications_filters():
         metadata = notifications_module.metadata(session=session)
         assert set(metadata["channels"]) == {"email", "whatsapp"}
         assert "sent" in metadata["statuses"]
+        assert "jobs" in metadata

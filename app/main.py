@@ -5,6 +5,11 @@ from .api.notifications import router as notifications_router
 from .api.uploads import router as uploads_router
 from .api.workflows import router as workflows_router
 from .config import settings
+from .logging import configure_logging, get_logger
+
+configure_logging()
+logger = get_logger(__name__)
+logger.info("app.startup", environment=settings.environment)
 
 app = FastAPI(title="prl-notifier", version="0.1.0")
 

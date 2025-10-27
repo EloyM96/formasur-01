@@ -1,7 +1,5 @@
 from datetime import datetime, time
 
-from datetime import datetime, time
-
 import pytest
 
 from app.jobs.scheduler import QuietHours, Scheduler
@@ -13,12 +11,18 @@ from app.notify.dispatcher import (
 )
 
 
+from types import SimpleNamespace
+
+
 class StubQueue:
     def __init__(self):
-        self.calls: list[tuple[str, dict]] = []
+        self.calls: list[dict] = []
 
     def enqueue(self, job_name, **options):
-        self.calls.append((job_name, options))
+        job_id = options.get("job_id") or f"job-{len(self.calls) + 1}"
+        job = SimpleNamespace(id=job_id)
+        self.calls.append({"job_name": job_name, "options": options, "job_id": job_id})
+        return job
 
 
 def _build_actions():
@@ -44,15 +48,21 @@ def test_dispatcher_enqueues_outside_quiet_hours():
     )
 
     evaluated = [
-        EvaluatedRow(row={"telefono": "+34123456789"}, rule_results={"debe_notificar": True})
+        EvaluatedRow(
+            row={"telefono": "+34123456789"}, rule_results={"debe_notificar": True}
+        )
     ]
 
-    summary = dispatcher.dispatch(evaluated, _build_actions(), dry_run=False, playbook="demo")
+    summary = dispatcher.dispatch(
+        evaluated, _build_actions(), dry_run=False, playbook="demo"
+    )
 
     assert queue.calls
-    job_name, options = queue.calls[0]
-    assert job_name == "app.notify.worker.dispatch"
-    assert options["kwargs"]["action"]["to"] == "+34123456789"
+    call = queue.calls[0]
+    assert call["job_name"] == "app.notify.worker.dispatch"
+    assert call["options"]["kwargs"]["action"]["to"] == "+34123456789"
+    assert call["options"]["kwargs"]["job_id"] == call["job_id"]
+    assert call["options"]["job_id"] == call["job_id"]
     assert summary["whatsapp"]["matches"] == 1
     assert summary["whatsapp"]["enqueued"] == 1
     assert summary["whatsapp"]["skipped_quiet_hours"] == 0
@@ -70,10 +80,14 @@ def test_dispatcher_skips_during_quiet_hours():
     )
 
     evaluated = [
-        EvaluatedRow(row={"telefono": "+34123456789"}, rule_results={"debe_notificar": True})
+        EvaluatedRow(
+            row={"telefono": "+34123456789"}, rule_results={"debe_notificar": True}
+        )
     ]
 
-    summary = dispatcher.dispatch(evaluated, _build_actions(), dry_run=False, playbook="demo")
+    summary = dispatcher.dispatch(
+        evaluated, _build_actions(), dry_run=False, playbook="demo"
+    )
 
     assert not queue.calls
     assert summary["whatsapp"]["matches"] == 1
@@ -91,10 +105,14 @@ def test_dispatcher_dry_run_never_touches_queue():
     )
 
     evaluated = [
-        EvaluatedRow(row={"telefono": "+34123456789"}, rule_results={"debe_notificar": True})
+        EvaluatedRow(
+            row={"telefono": "+34123456789"}, rule_results={"debe_notificar": True}
+        )
     ]
 
-    summary = dispatcher.dispatch(evaluated, _build_actions(), dry_run=True, playbook="demo")
+    summary = dispatcher.dispatch(
+        evaluated, _build_actions(), dry_run=True, playbook="demo"
+    )
 
     assert not queue.calls
     assert summary["whatsapp"]["matches"] == 1
@@ -129,7 +147,9 @@ class StubAuditRepository:
 def test_deliver_records_audit_and_adapter_calls():
     adapter = StubAdapter()
     repository = StubAuditRepository()
-    dispatcher = NotificationDispatcher(queue=None, adapters={"sms": adapter}, audit_repository=repository)
+    dispatcher = NotificationDispatcher(
+        queue=None, adapters={"sms": adapter}, audit_repository=repository
+    )
 
     result = dispatcher.deliver(
         playbook="demo",
@@ -144,6 +164,7 @@ def test_deliver_records_audit_and_adapter_calls():
     entry = repository.entries[0]
     assert entry.status == "sent"
     assert entry.channel == "sms"
+    assert entry.job_id is not None
 
 
 def test_deliver_missing_adapter_raises():
@@ -161,7 +182,9 @@ def test_deliver_missing_adapter_raises():
 def test_deliver_records_errors():
     adapter = FailingAdapter()
     repository = StubAuditRepository()
-    dispatcher = NotificationDispatcher(queue=None, adapters={"sms": adapter}, audit_repository=repository)
+    dispatcher = NotificationDispatcher(
+        queue=None, adapters={"sms": adapter}, audit_repository=repository
+    )
 
     with pytest.raises(NotificationDeliveryError):
         dispatcher.deliver(
