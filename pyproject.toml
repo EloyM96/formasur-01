@@ -21,6 +21,7 @@ dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
     "Jinja2>=3.1",
+    "structlog>=24.1",
     "pandas>=2.2",
     "openpyxl>=3.1",
     "pyyaml>=6.0",
@@ -45,11 +46,13 @@ target-version = ["py311"]
 
 [tool.ruff]
 line-length = 88
-extend-select = ["I"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["F841", "E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
-profile = "black"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

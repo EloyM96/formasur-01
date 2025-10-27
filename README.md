@@ -63,6 +63,19 @@ Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de p
 
 Con estos pasos el equipo dispone de una API funcional en minutos y una base homogénea para ejecutar pruebas, migraciones y jobs de cola.
 
+## Observabilidad y trazabilidad
+
+- El backend inicializa **logging estructurado con structlog** y emite eventos JSON enriquecidos con `job_id`, `job_name` y canal de entrega para seguir cada notificación desde el _enqueue_ hasta la confirmación del adaptador.
+- Los workers de RQ propagan automáticamente el identificador de job y registran los hitos `queued`, `sent`, `error`, etc. en la base de datos (`jobs` + `job_events`).
+- Las auditorías de notificaciones enlazan cada evento con su job correspondiente, lo que permite correlacionar métricas, reintentos y diagnósticos operativos sin exponer información sensible.
+
+## Consideraciones RGPD y operativas
+
+- **Minimización de datos**: la tabla `contacts` almacena únicamente la información estrictamente necesaria (nombre, canales de contacto y atributos opcionales) y separa los cursos/inscripciones en entidades dedicadas (`courses`, `enrollments`).
+- **Retención y acceso**: las notificaciones se auditan con payloads serializados y ligados a un `job_id`, facilitando exportaciones o borrados por estudiante/contacto bajo petición del interesado.
+- **Privacidad en logs**: el logger estructurado evita volcar PII completa, utilizando claves agregadas (`job_id`, `channel`, `status`) para el análisis operativo.
+- **Operaciones seguras**: la correlación de jobs habilita dashboards y alertas que no requieren copiar datos personales; además, los playbooks pueden documentar ventanas de silencio y reglas de consentimiento en `workflows/`.
+
 ## Licencia
 
 Este proyecto se distribuye bajo la licencia MIT. Consulta [LICENSE](LICENSE) para más detalles.
