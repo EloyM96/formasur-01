@@ -1,17 +1,28 @@
 """Application configuration module."""
-from pydantic import BaseSettings
+from pydantic import EmailStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Centralised application settings."""
+    """Centralised application settings sourced from environment variables."""
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     environment: str = "development"
-    database_url: str = "sqlite:///./prl_notifier.db"
+
+    # Database
+    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/postgres"
+
+    # Redis / Queue
+    redis_url: str = "redis://localhost:6379/0"
     queue_url: str = "redis://localhost:6379/0"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # SMTP
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: EmailStr | None = None
 
 
 settings = Settings()
