@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Dudas generales
+    url: https://example.com/support
+    about: Utiliza este enlace para preguntas no relacionadas con bugs o mejoras.
