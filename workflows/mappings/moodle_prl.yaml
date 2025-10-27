@@ -1,0 +1,5 @@
+columns:
+  full_name: "Nombre completo"
+  email: "Email"
+  certificate_expires_at: "Fecha caducidad"
+  telefono: "Teléfono"

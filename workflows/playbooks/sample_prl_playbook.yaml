@@ -1,0 +1,24 @@
+name: sample_prl_playbook
+trigger:
+  type: schedule
+  cron: "0 8 * * 1-5"
+quiet_hours:
+  start: "21:00"
+  end: "08:00"
+source:
+  kind: xlsx
+  path: uploads/moodle_export.xlsx
+mapping: workflows/mappings/moodle_prl.yaml
+ruleset: app/rules/rulesets/sample.yaml
+actions:
+  - type: notify
+    channel: whatsapp
+    template: aviso_vencimiento
+    to: "{{ row.telefono }}"
+    when: "{{ rule_results.vencido }}"
+  - type: notify
+    channel: email
+    template: recordatorio.html
+    subject: "Recordatorio PRL"
+    to: "{{ row.email }}"
+    when: "{{ rule_results.proximo }}"

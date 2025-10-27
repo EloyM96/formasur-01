@@ -22,6 +22,25 @@ Esta recomendación debe emplearse como referencia constante a lo largo del desa
 
 El repositorio incluye la estructura base del monolito FastAPI con carpetas para módulos, reglas, notificaciones, jobs, frontend Next.js, workflows declarativos, migraciones y artefactos de despliegue.
 
+## Stubs de referencia listos para ejecutar
+
+Para acelerar el onboarding del equipo se incluyen pruebas de concepto ejecutables que cubren los contratos descritos en el documento de arquitectura:
+
+- **Modelos ORM/Pydantic** (`app/models.py`): entidad `Student` en SQLAlchemy 2.0 y su equivalente `StudentModel` en Pydantic para serializar filas provenientes de la BD o del import XLSX.
+- **Motor de reglas** (`app/rules/engine.py`): carga el YAML `app/rules/rulesets/sample.yaml` y evalúa expresiones simples con helpers (`today`, `parse_date`, `days_until`).
+- **Scheduler con quiet hours** (`app/jobs/scheduler.py`): envuelve APScheduler y bloquea ejecuciones dentro de la franja declarada en los playbooks.
+- **Adaptador CLI** (`app/notify/adapters/cli.py`): ejecuta procesos externos que hablen JSON ↔ JSON por stdin/stdout.
+
+### Cómo extender los stubs con reglas y playbooks YAML
+
+1. **Duplica el playbook de ejemplo** `workflows/playbooks/sample_prl_playbook.yaml` y ajusta el `cron`, `source` y las acciones para el flujo deseado. Cada playbook debe apuntar a un `ruleset` y un `mapping`.
+2. **Declara nuevos rulesets** en `app/rules/rulesets/` siguiendo la clave `rules`. Las expresiones `when` tienen acceso al diccionario `row` con los campos mapeados y a los helpers del motor.
+3. **Mantén los mapeos de columnas** en `workflows/mappings/` para aislar los nombres de los XLSX del modelo interno consumido por el `StudentModel` y las reglas.
+4. **Conecta acciones personalizadas** creando adaptadores adicionales dentro de `app/notify/adapters/` reutilizando la firma de `CLIAdapter` o exportando clases equivalentes (por ejemplo un `EmailSMTPAdapter`).
+5. **Registra jobs** mediante `Scheduler.schedule_interval` empleando las quiet hours definidas en el playbook para coordinar la ejecución con la cola de notificaciones.
+
+Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de partida para ampliar la cobertura con escenarios reales.
+
 ## Puesta en marcha rápida
 
 1. Clona el repositorio y crea el archivo de variables de entorno a partir de la plantilla:
