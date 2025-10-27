@@ -1,7 +1,16 @@
 from datetime import datetime, time
 
+from datetime import datetime, time
+
+import pytest
+
 from app.jobs.scheduler import QuietHours, Scheduler
-from app.notify.dispatcher import EvaluatedRow, NotificationDispatcher
+from app.notify.dispatcher import (
+    AdapterNotFoundError,
+    EvaluatedRow,
+    NotificationDeliveryError,
+    NotificationDispatcher,
+)
 
 
 class StubQueue:
@@ -47,6 +56,7 @@ def test_dispatcher_enqueues_outside_quiet_hours():
     assert summary["whatsapp"]["matches"] == 1
     assert summary["whatsapp"]["enqueued"] == 1
     assert summary["whatsapp"]["skipped_quiet_hours"] == 0
+    assert summary["whatsapp"]["errors"] == 0
 
 
 def test_dispatcher_skips_during_quiet_hours():
@@ -69,6 +79,7 @@ def test_dispatcher_skips_during_quiet_hours():
     assert summary["whatsapp"]["matches"] == 1
     assert summary["whatsapp"]["enqueued"] == 0
     assert summary["whatsapp"]["skipped_quiet_hours"] == 1
+    assert summary["whatsapp"]["errors"] == 0
 
 
 def test_dispatcher_dry_run_never_touches_queue():
@@ -89,3 +100,76 @@ def test_dispatcher_dry_run_never_touches_queue():
     assert summary["whatsapp"]["matches"] == 1
     assert summary["whatsapp"]["enqueued"] == 0
     assert summary["whatsapp"]["skipped_quiet_hours"] == 0
+    assert summary["whatsapp"]["errors"] == 0
+
+
+class StubAdapter:
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def send(self, payload: dict) -> dict:
+        self.calls.append(payload)
+        return {"delivered": True}
+
+
+class FailingAdapter:
+    def send(self, payload: dict) -> dict:
+        raise RuntimeError("boom")
+
+
+class StubAuditRepository:
+    def __init__(self) -> None:
+        self.entries = []
+
+    def add(self, entry):
+        self.entries.append(entry)
+        return entry
+
+
+def test_deliver_records_audit_and_adapter_calls():
+    adapter = StubAdapter()
+    repository = StubAuditRepository()
+    dispatcher = NotificationDispatcher(queue=None, adapters={"sms": adapter}, audit_repository=repository)
+
+    result = dispatcher.deliver(
+        playbook="demo",
+        action={"channel": "sms", "to": "+34", "body": "Hola"},
+        row={"to": "+34"},
+        rule_results={"ok": True},
+    )
+
+    assert result["status"] == "sent"
+    assert adapter.calls
+    assert repository.entries
+    entry = repository.entries[0]
+    assert entry.status == "sent"
+    assert entry.channel == "sms"
+
+
+def test_deliver_missing_adapter_raises():
+    dispatcher = NotificationDispatcher(queue=None, adapters={}, audit_repository=None)
+
+    with pytest.raises(AdapterNotFoundError):
+        dispatcher.deliver(
+            playbook="demo",
+            action={"channel": "unknown"},
+            row={},
+            rule_results={},
+        )
+
+
+def test_deliver_records_errors():
+    adapter = FailingAdapter()
+    repository = StubAuditRepository()
+    dispatcher = NotificationDispatcher(queue=None, adapters={"sms": adapter}, audit_repository=repository)
+
+    with pytest.raises(NotificationDeliveryError):
+        dispatcher.deliver(
+            playbook="demo",
+            action={"channel": "sms", "to": "+34"},
+            row={},
+            rule_results={},
+        )
+
+    assert repository.entries
+    assert repository.entries[0].status == "error"

@@ -1,7 +1,7 @@
 """Minimal ORM and Pydantic models used across the MVP."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 try:  # pragma: no cover - exercised indirectly when dependency is present
     from pydantic import BaseModel, ConfigDict, Field
@@ -30,7 +30,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for offline environme
         return default
 
 try:  # pragma: no cover - prefer real SQLAlchemy when installed
-    from sqlalchemy import Date, Integer, String
+    from sqlalchemy import Date, DateTime, Integer, JSON, String, Text, func
     from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
     class Base(DeclarativeBase):
@@ -58,6 +58,25 @@ try:  # pragma: no cover - prefer real SQLAlchemy when installed
         mime: Mapped[str] = mapped_column(String(255), nullable=False)
         size: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    class Notification(Base):
+        """Audit trail entry for dispatched notifications."""
+
+        __tablename__ = "notifications"
+
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        playbook: Mapped[str | None] = mapped_column(String(255), nullable=True)
+        channel: Mapped[str] = mapped_column(String(50), nullable=False)
+        adapter: Mapped[str] = mapped_column(String(100), nullable=False)
+        recipient: Mapped[str | None] = mapped_column(String(255), nullable=True)
+        subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+        status: Mapped[str] = mapped_column(String(50), nullable=False)
+        payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+        response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+        error: Mapped[str | None] = mapped_column(Text, nullable=True)
+        created_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True), nullable=False, server_default=func.now()
+        )
+
 except ModuleNotFoundError:  # pragma: no cover - lightweight fallback for tests
     from dataclasses import dataclass
 
@@ -80,6 +99,24 @@ except ModuleNotFoundError:  # pragma: no cover - lightweight fallback for tests
         mime: str = ""
         size: int = 0
 
+    @dataclass
+    class Notification(Base):  # type: ignore[override]
+        id: int | None = None
+        playbook: str | None = None
+        channel: str = ""
+        adapter: str = ""
+        recipient: str | None = None
+        subject: str | None = None
+        status: str = "dry_run"
+        payload: dict = None  # type: ignore[assignment]
+        response: dict | None = None
+        error: str | None = None
+        created_at: datetime = datetime.utcnow()
+
+        def __post_init__(self) -> None:  # pragma: no cover - defensive defaulting
+            if self.payload is None:
+                self.payload = {}
+
 
 class StudentModel(BaseModel):
     """Pydantic representation of the :class:`Student` ORM entity."""
@@ -93,4 +130,29 @@ class StudentModel(BaseModel):
     certificate_expires_at: date
 
 
-__all__ = ["Base", "Student", "StudentModel", "UploadedFile"]
+class NotificationModel(BaseModel):
+    """Pydantic representation of the :class:`Notification` audit entry."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = Field(default=None, description="Database identifier of the entry")
+    playbook: str | None = None
+    channel: str
+    adapter: str
+    recipient: str | None = None
+    subject: str | None = None
+    status: str
+    payload: dict
+    response: dict | None = None
+    error: str | None = None
+    created_at: datetime
+
+
+__all__ = [
+    "Base",
+    "Notification",
+    "NotificationModel",
+    "Student",
+    "StudentModel",
+    "UploadedFile",
+]

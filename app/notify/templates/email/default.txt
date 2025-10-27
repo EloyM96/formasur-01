@@ -1,0 +1,10 @@
+Hola {{ context.row.full_name or "equipo" }},
+
+{{ action.body or ("Tienes una nueva notificación generada por el playbook " ~ (playbook or "PRL Notifier")) }}.
+
+Datos relevantes:
+{% for key, value in context.row.items() %}- {{ key }}: {{ value }}
+{% endfor %}
+
+Un saludo,
+Equipo PRL Notifier

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="es">
+  <body style="font-family: Arial, sans-serif; color: #1f2937;">
+    <p>Hola {{ context.row.full_name or "equipo" }},</p>
+    <p>{{ action.body or ("Tienes una nueva notificación generada por el playbook " ~ (playbook or "PRL Notifier")) }}.</p>
+    <p>Datos relevantes:</p>
+    <ul>
+      {% for key, value in context.row.items() %}
+      <li><strong>{{ key }}:</strong> {{ value }}</li>
+      {% endfor %}
+    </ul>
+    <p>Un saludo,<br/>Equipo PRL Notifier</p>
+  </body>
+</html>

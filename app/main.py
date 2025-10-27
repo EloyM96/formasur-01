@@ -1,6 +1,7 @@
 """Application entry point for the prl-notifier FastAPI monolith."""
 from fastapi import APIRouter, FastAPI
 
+from .api.notifications import router as notifications_router
 from .api.uploads import router as uploads_router
 from .api.workflows import router as workflows_router
 from .config import settings
@@ -18,5 +19,6 @@ def healthcheck() -> dict[str, str]:
 
 
 app.include_router(router)
+app.include_router(notifications_router)
 app.include_router(uploads_router)
 app.include_router(workflows_router)
