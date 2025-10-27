@@ -47,6 +47,17 @@ try:  # pragma: no cover - prefer real SQLAlchemy when installed
         course: Mapped[str] = mapped_column(String(255), nullable=False)
         certificate_expires_at: Mapped[date] = mapped_column(Date, nullable=False)
 
+    class UploadedFile(Base):
+        """Metadata of files ingested through the uploads API."""
+
+        __tablename__ = "uploaded_files"
+
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+        stored_path: Mapped[str] = mapped_column(String(512), nullable=False)
+        mime: Mapped[str] = mapped_column(String(255), nullable=False)
+        size: Mapped[int] = mapped_column(Integer, nullable=False)
+
 except ModuleNotFoundError:  # pragma: no cover - lightweight fallback for tests
     from dataclasses import dataclass
 
@@ -61,6 +72,14 @@ except ModuleNotFoundError:  # pragma: no cover - lightweight fallback for tests
         course: str = ""
         certificate_expires_at: date = date.today()
 
+    @dataclass
+    class UploadedFile(Base):  # type: ignore[override]
+        id: int | None = None
+        original_name: str = ""
+        stored_path: str = ""
+        mime: str = ""
+        size: int = 0
+
 
 class StudentModel(BaseModel):
     """Pydantic representation of the :class:`Student` ORM entity."""
@@ -74,4 +93,4 @@ class StudentModel(BaseModel):
     certificate_expires_at: date
 
 
-__all__ = ["Base", "Student", "StudentModel"]
+__all__ = ["Base", "Student", "StudentModel", "UploadedFile"]

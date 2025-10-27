@@ -1,5 +1,4 @@
 """Application configuration module."""
-from pydantic import EmailStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,7 +21,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_username: str = ""
     smtp_password: str = ""
-    smtp_from_email: EmailStr | None = None
+    smtp_from_email: str | None = None
 
 
 settings = Settings()
