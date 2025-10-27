@@ -1,18 +1,17 @@
-"""Background queue client helpers."""
-from dataclasses import dataclass
+"""Background queue client helpers backed by Redis/RQ."""
+from __future__ import annotations
+
+from redis import Redis
+from rq import Queue
 
 from .config import settings
 
 
-@dataclass
-class QueueClient:
-    """Minimal queue client placeholder for background jobs."""
+redis_connection = Redis.from_url(settings.redis_url, decode_responses=False)
+"""Shared Redis connection used by background workers."""
 
-    url: str
-
-    def enqueue(self, task_name: str, payload: dict) -> None:
-        """Stub enqueue implementation to be replaced with a real broker."""
-        raise NotImplementedError(f"Queue backend not yet implemented: {task_name} -> {payload}")
+notification_queue = Queue(connection=redis_connection)
+"""Default RQ queue for notification jobs."""
 
 
-queue_client = QueueClient(url=settings.queue_url)
+__all__ = ["redis_connection", "notification_queue"]
