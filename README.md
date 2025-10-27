@@ -22,6 +22,28 @@ Esta recomendación debe emplearse como referencia constante a lo largo del desa
 
 El repositorio incluye la estructura base del monolito FastAPI con carpetas para módulos, reglas, notificaciones, jobs, frontend Next.js, workflows declarativos, migraciones y artefactos de despliegue.
 
+## Puesta en marcha rápida
+
+1. Clona el repositorio y crea el archivo de variables de entorno a partir de la plantilla:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Levanta la infraestructura mínima (API, Postgres y Redis) con Docker Compose:
+
+   ```bash
+   docker compose up -d
+   ```
+
+3. En un entorno de desarrollo local también puedes lanzar la aplicación con recarga automática:
+
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+
+Con estos pasos el equipo dispone de una API funcional en minutos y una base homogénea para ejecutar pruebas, migraciones y jobs de cola.
+
 ## Licencia
 
 Este proyecto se distribuye bajo la licencia MIT. Consulta [LICENSE](LICENSE) para más detalles.

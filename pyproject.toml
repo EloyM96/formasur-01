@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prl-notifier"
+version = "0.1.0"
+description = "FastAPI monolith for the prl-notifier MVP"
+readme = "README.md"
+authors = [{ name = "Formasur Team" }]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110,<1.0",
+    "uvicorn[standard]>=0.27,<0.28",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "rq>=1.15",
+    "redis>=5.0",
+    "apscheduler>=3.10",
+    "psycopg[binary]>=3.1",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24.2",
+    "ruff>=0.3",
+    "pytest>=8.0",
+    "mypy>=1.8",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 88
+extend-select = ["I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+profile = "black"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = []
+ignore_missing_imports = true
+strict = false
