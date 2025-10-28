@@ -39,6 +39,10 @@ Para acelerar el onboarding del equipo se incluyen pruebas de concepto ejecutabl
 4. **Conecta acciones personalizadas** creando adaptadores adicionales dentro de `app/notify/adapters/` reutilizando la firma de `CLIAdapter` o exportando clases equivalentes (por ejemplo un `EmailSMTPAdapter`).
 5. **Registra jobs** mediante `Scheduler.schedule_interval` empleando las quiet hours definidas en el playbook para coordinar la ejecución con la cola de notificaciones.
 
+### Plantilla de reporte Moodle y datos de ejemplo
+
+El repositorio incluye un reporte de actividad mínimo exportado desde Moodle en `docs/assets/moodle_report_example.xlsx`. El mapeo `workflows/mappings/moodle_prl.yaml` espera exactamente las columnas `Nombre`, `Apellidos`, `Correo`, `Primer acceso`, `Último acceso` y `Tiempo total`. La ingesta combina el nombre y apellidos, convierte la duración (`Tiempo total`) a horas decimales, conserva los accesos como atributos de matrícula y asigna el nombre del curso a partir del nombre original del fichero (sin extensión). Puedes abrir el fichero para validar el formato o duplicarlo para generar nuevos casos de prueba manuales.
+
 Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de partida para ampliar la cobertura con escenarios reales.
 
 ## Documentación operativa
