@@ -1,43 +1,93 @@
 # prl-notifier
 
-## Objetivo del MVP
+Plataforma monolítica para la gestión integral de la prevención de riesgos laborales (PRL) en entornos formativos. Este repositorio consolida backend, frontend, automatizaciones y documentación operativa necesarios para importar datos desde Moodle, evaluar el cumplimiento normativo con reglas declarativas y orquestar campañas de notificación multicanal.
 
-El objetivo del MVP de **prl-notifier** es automatizar el seguimiento de la prevención de riesgos laborales mediante:
+> **Licencia propietaria**: Todo el contenido está protegido por derechos de autor de Eloy Moya Martínez. El uso, distribución o modificación requiere autorización previa y expresa. Consulta el archivo [LICENSE](LICENSE) para las condiciones completas.
 
-- Ingesta de hojas de cálculo XLSX exportadas desde Moodle con la información del alumnado y su estado en los cursos obligatorios.
-- Aplicación de un motor de reglas declarativo que permita definir condiciones de cumplimiento y próximos hitos.
-- Emisión de avisos multicanal (correo electrónico, mensajería y notificaciones internas) para alumnado, tutores y equipo de coordinación.
+## Tabla de contenidos
 
-## Recomendación arquitectónica
+- [Visión general](#visión-general)
+- [Arquitectura funcional](#arquitectura-funcional)
+- [Componentes principales](#componentes-principales)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Requisitos previos](#requisitos-previos)
+- [Configuración inicial](#configuración-inicial)
+- [Puesta en marcha rápida](#puesta-en-marcha-rápida)
+- [Ejecución en desarrollo](#ejecución-en-desarrollo)
+- [Despliegue y operación](#despliegue-y-operación)
+- [Flujo de negocio PRL](#flujo-de-negocio-prl)
+- [Extensibilidad y personalización](#extensibilidad-y-personalización)
+- [Observabilidad y seguridad](#observabilidad-y-seguridad)
+- [Guía de resolución de problemas](#guía-de-resolución-de-problemas)
+- [Documentación adicional](#documentación-adicional)
+- [Licencia](#licencia)
 
-Para maximizar la velocidad de entrega y mantener la coherencia entre backend y frontend desde el primer día, se recomienda un **monolito FastAPI** que exponga contratos JSON estables consumidos por una **UI Next.js**. Este enfoque prioriza:
+## Visión general
 
-- Un único proyecto Python que concentre los módulos de ingesta, reglas y notificaciones, incluyendo los jobs y tareas background necesarios.
-- Un frontend desacoplado pero versionado dentro del mismo repositorio, consumiendo únicamente contratos JSON documentados.
-- Sincronización continua entre backend y frontend al compartir ciclos de despliegue y pipelines dentro del monorepo.
+El objetivo del MVP de **prl-notifier** es automatizar el seguimiento de la PRL para organizaciones educativas. El sistema facilita a personal técnico y no técnico:
 
-Esta recomendación debe emplearse como referencia constante a lo largo del desarrollo del MVP.
+- Ingerir hojas de cálculo XLSX exportadas desde Moodle con información del alumnado y su estado formativo.
+- Evaluar el cumplimiento de la PRL mediante un motor de reglas declarativo respaldado por YAML.
+- Coordinar y auditar notificaciones multicanal para alumnado, tutores y personal de coordinación.
+- Unificar todo el ciclo de vida en un único repositorio versionado que agiliza la entrega continua.
 
-## Estructura inicial
+## Arquitectura funcional
 
-El repositorio incluye la estructura base del monolito FastAPI con carpetas para módulos, reglas, notificaciones, jobs, frontend Next.js, workflows declarativos, migraciones y artefactos de despliegue.
+```
+[XLSX Moodle] → [Ingesta y normalización] → [Motor de reglas declarativas]
+                      │                          │
+                      ▼                          ▼
+               [Base de datos] ↔ [API FastAPI] ↔ [Scheduler y Jobs]
+                      │                          │
+                      ▼                          ▼
+                 [Notificaciones] ← [Playbooks YAML]
+```
 
-## Stubs de referencia listos para ejecutar
+El backend FastAPI expone contratos JSON consumidos por una interfaz Next.js. Los playbooks YAML describen el calendario, las fuentes de datos y las acciones de notificación. Toda la automatización reside en un monolito Python que comparte versión y pipelines con el frontend para garantizar consistencia.
 
-Para acelerar el onboarding del equipo se incluyen pruebas de concepto ejecutables que cubren los contratos descritos en el documento de arquitectura:
+## Componentes principales
 
-- **Modelos ORM/Pydantic** (`app/models.py`): entidad `Student` en SQLAlchemy 2.0 y su equivalente `StudentModel` en Pydantic para serializar filas provenientes de la BD o del import XLSX.
-- **Motor de reglas** (`app/rules/engine.py`): carga el YAML `app/rules/rulesets/sample.yaml` y evalúa expresiones simples con helpers (`today`, `parse_date`, `days_until`).
-- **Scheduler con quiet hours** (`app/jobs/scheduler.py`): envuelve APScheduler y bloquea ejecuciones dentro de la franja declarada en los playbooks.
-- **Adaptador CLI** (`app/notify/adapters/cli.py`): ejecuta procesos externos que hablen JSON ↔ JSON por stdin/stdout.
+| Área              | Descripción                                                                                     |
+|-------------------|-------------------------------------------------------------------------------------------------|
+| Ingesta           | Conversión de XLSX a modelos internos (`app/modules/ingest/`).                                 |
+| Reglas            | Evaluación declarativa (`app/rules/engine.py` + `app/rules/rulesets/`).                         |
+| API REST          | Servicios para cursos, matrículas y notificaciones (`app/api/`).                                |
+| Programación      | Jobs con ventanas de silencio y repetición (`app/jobs/`).                                       |
+| Notificaciones    | Adaptadores para CLI, email u otros canales (`app/notify/adapters/`).                          |
+| Frontend          | UI Next.js bajo `frontend/` que consume los contratos JSON expuestos.                           |
+| Infraestructura   | Contenedores Docker, Compose y migraciones (`docker/`, `docker-compose.yml`, `migrations/`).    |
 
-### Cómo extender los stubs con reglas y playbooks YAML
+## Estructura del repositorio
 
-1. **Duplica el playbook de ejemplo** `workflows/playbooks/sample_prl_playbook.yaml` y ajusta el `cron`, `source` y las acciones para el flujo deseado. Cada playbook debe apuntar a un `ruleset` y un `mapping`.
-2. **Declara nuevos rulesets** en `app/rules/rulesets/` siguiendo la clave `rules`. Las expresiones `when` tienen acceso al diccionario `row` con los campos mapeados y a los helpers del motor.
-3. **Mantén los mapeos de columnas** en `workflows/mappings/` para aislar los nombres de los XLSX del modelo interno consumido por el `StudentModel` y las reglas.
-4. **Conecta acciones personalizadas** creando adaptadores adicionales dentro de `app/notify/adapters/` reutilizando la firma de `CLIAdapter` o exportando clases equivalentes (por ejemplo un `EmailSMTPAdapter`).
-5. **Registra jobs** mediante `Scheduler.schedule_interval` empleando las quiet hours definidas en el playbook para coordinar la ejecución con la cola de notificaciones.
+```
+.
+├── app/                  # Monolito FastAPI con módulos de negocio, conectores y servicios
+├── frontend/             # Aplicación Next.js que consume la API REST
+├── docker/               # Imagenes base y scripts de construcción
+├── docker-compose.yml    # Orquestación local de API, Postgres y Redis
+├── docs/                 # Documentación extendida para operación y pruebas
+├── migrations/           # Migraciones de base de datos (Alembic)
+├── tests/                # Cobertura automatizada del backend
+├── workflows/            # Playbooks y mappings YAML para jobs y reglas
+├── LICENSE               # Licencia propietaria
+└── README.md             # Este documento
+```
+
+## Requisitos previos
+
+- Docker 24+ y Docker Compose Plugin.
+- Python 3.11+ con `pip` y `uvicorn` para ejecución local.
+- Node.js 18+ y `pnpm`/`npm` para trabajar con el frontend.
+- Acceso a un servidor PostgreSQL y Redis (proporcionados por Docker Compose en entornos locales).
+
+## Configuración inicial
+
+1. Clona el repositorio y crea tu archivo de variables de entorno:
+   ```bash
+   cp .env.example .env
+   ```
+2. Ajusta las variables en `.env` para conectar con Moodle, definir tokens y parámetros de notificación.
+3. Si vas a consumir la API de Moodle, registra `MOODLE_TOKEN`, `MOODLE_REST_BASE_URL` y `MOODLE_SOAP_WSDL_URL` en `app/config.py` o en tu `.env`.
 
 ### Plantilla de reporte Moodle y datos de ejemplo
 
@@ -45,73 +95,82 @@ El repositorio incluye un reporte de actividad mínimo exportado desde Moodle en
 
 Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de partida para ampliar la cobertura con escenarios reales.
 
-## Documentación operativa
+La forma más sencilla de validar el stack completo es mediante Docker Compose:
 
-- [Portal de documentación completa](docs/README.md): índice que enlaza con la visión general, la arquitectura, el runbook operativo, la guía de pruebas y las instrucciones de extensibilidad para becarios.
-- [Manual operativo beta](docs/beta_operational_manual.md): guía paso a paso que documenta la ingesta del XLSX, la estructura de la base de datos, los endpoints REST disponibles, el motor de reglas y la traza de notificaciones.
+```bash
+docker compose up -d
+```
 
-## Puesta en marcha rápida
+Este comando levanta la API FastAPI, la base de datos PostgreSQL, Redis y los workers necesarios. Los contenedores se reinician automáticamente para garantizar disponibilidad mínima.
 
-1. Clona el repositorio y crea el archivo de variables de entorno a partir de la plantilla:
+## Ejecución en desarrollo
 
+1. Activa un entorno virtual y instala dependencias:
    ```bash
-   cp .env.example .env
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -U pip
+   pip install -e .[dev]
    ```
-
-2. Levanta la infraestructura mínima (API, Postgres y Redis) con Docker Compose:
-
-   ```bash
-   docker compose up -d
-   ```
-
-3. En un entorno de desarrollo local también puedes lanzar la aplicación con recarga automática:
-
+2. Inicia la API con recarga automática:
    ```bash
    uvicorn app.main:app --reload
    ```
+3. Lanza el frontend en paralelo (desde `frontend/`):
+   ```bash
+   pnpm install
+   pnpm dev
+   ```
+4. Ejecuta los tests para asegurar la regresión mínima:
+   ```bash
+   pytest
+   ```
 
-Con estos pasos el equipo dispone de una API funcional en minutos y una base homogénea para ejecutar pruebas, migraciones y jobs de cola.
+## Despliegue y operación
 
-## Flujo beta de seguimiento PRL
+- **Producción en contenedores**: construye las imágenes en `docker/` y publica en tu registro privado. Ajusta las variables de entorno para apuntar a servicios gestionados (RDS, ElastiCache, etc.).
+- **Escalado horizontal**: separa los workers RQ del API Web cuando el volumen de notificaciones crezca. Redis actúa como cola y permite lanzar varias réplicas.
+- **Automatización**: los playbooks en `workflows/playbooks/` definen cron, fuentes y acciones. Versionarlos junto al código garantiza reproducibilidad.
+- **Backups y migraciones**: ejecuta `alembic upgrade head` antes de cada despliegue. Automatiza backups de PostgreSQL y configúralos en tus pipelines.
 
-El MVP ya implementa el flujo completo exigido para las pruebas beta del operario:
+## Flujo de negocio PRL
 
-1. **Carga del XLSX Moodle** (`POST /uploads`): el fichero se valida contra el mapeo `workflows/mappings/moodle_prl.yaml`. Se genera un registro en `uploaded_files`, se guarda una copia física y se invoca al cargador `app/modules/ingest/course_loader.py`.
-2. **Normalización e inserción**: se crean/actualizan cursos, alumnado y matrículas. Cuando faltan datos de fecha u horas, el sistema los aproxima (ej. caducidad → `certificate_expires_at`) y permite su corrección manual vía API.
-3. **Resumen operativo** (`GET /courses`): devuelve todos los cursos con métricas agregadas por matrícula (`total_enrollments`, `non_compliant_enrollments`, `zero_hours_enrollments`) y con el conteo de avisos emitidos por canal (`notifications.by_channel`).
-4. **Detalle del curso** (`GET /courses/{id}`): muestra cada matrícula con el resultado de las reglas declarativas, el indicador `has_no_activity` para quienes nunca entraron (0 h cursadas) y los envíos previos clasificados por canal (`sms`, `email`, `whatsapp`, …).
-5. **Correcciones manuales** (`PATCH /courses/{id}`): permite fijar `deadline_date` y `hours_required` cuando el XLSX carece de esos datos o se detectan desviaciones.
-6. **Filtro de incumplimientos** (`GET /students/non-compliance`): aplica el ruleset `app/rules/rulesets/enrollments.yaml` para extraer destacados (certificado caducado, caducidad cercana, horas insuficientes) y admite filtros por curso, horas, fechas o regla concreta.
-7. **Histórico de avisos** (`GET /notifications`): consulta cruzada por canal, playbook o destinatario. Cada notificación queda ligada a la matrícula (`notifications.enrollment_id`) para mostrar en tiempo real los envíos previos desde la pantalla del operario.
+1. **Carga de datos** (`POST /uploads`): el XLSX se valida contra el mapeo definido en `workflows/mappings/`. Se registra la subida y se invoca el cargador correspondiente.
+2. **Normalización**: `app/modules/ingest/course_loader.py` transforma filas en entidades (`courses`, `enrollments`, `students`). Campos ausentes se derivan o marcan para revisión manual.
+3. **Evaluación de reglas**: `app/rules/engine.py` evalúa las condiciones declaradas en YAML y anota incumplimientos, hitos próximos y métricas agregadas.
+4. **Monitoreo y reporting**: endpoints como `GET /courses`, `GET /courses/{id}` y `GET /students/non-compliance` ofrecen paneles listos para integrarse con el frontend.
+5. **Notificaciones**: los jobs definidos en `app/jobs/` y los adaptadores en `app/notify/adapters/` gestionan envíos por correo, mensajería y otros canales.
+6. **Seguimiento**: `GET /notifications` y las tablas `jobs` / `job_events` permiten auditar cada envío y correlacionarlo con reglas y playbooks.
 
-> **Nota:** Cuando se habilite la API de Moodle (`MOODLE_API_ENABLED=true`), el servicio `CourseSyncService` reemplazará la ingesta XLSX reutilizando las mismas reglas, métricas y API REST ya expuestas.
+## Extensibilidad y personalización
 
-## Integración con Moodle
+- **Nuevas reglas**: añade YAML en `app/rules/rulesets/` y referencias en tus playbooks. Las expresiones disponen de helpers como `today`, `parse_date` y `days_until`.
+- **Mapeos de datos**: mantiene los archivos en `workflows/mappings/` para desacoplar la estructura del XLSX de tus modelos internos.
+- **Playbooks**: duplica `workflows/playbooks/sample_prl_playbook.yaml`, define `cron`, `source` y acciones (`notify`, `enqueue`, etc.) y asígnalos a tus rulesets.
+- **Adaptadores de notificación**: extiende `app/notify/adapters/` para integrar SMS, WhatsApp, bots corporativos o cualquier canal que hable JSON ↔ JSON.
+- **Integración con Moodle**: habilita `MOODLE_API_ENABLED=true` para que `CourseSyncService` sincronice automáticamente cursos y matrículas usando los servicios REST/SOAP oficiales.
 
-El monolito incluye una capa de conectores (`app/connectors/moodle/`) preparada para consumir los servicios REST y SOAP de Moodle mediante token. La activación de la API se controla desde variables de entorno expuestas en `app/config.py`:
+## Observabilidad y seguridad
 
-- `MOODLE_API_ENABLED`: activa el uso de la API oficial en lugar de los ficheros XLSX exportados manualmente.
-- `MOODLE_TOKEN`: token emitido por Moodle para los servicios web.
-- `MOODLE_REST_BASE_URL`: URL base del endpoint REST (`https://moodle.example/webservice`).
-- `MOODLE_SOAP_WSDL_URL`: WSDL del servicio SOAP legacy en caso de necesitarlo.
+- **Logging estructurado**: `app/logging.py` inicializa `structlog` con contexto enriquecido (`job_id`, `channel`, `status`).
+- **Trazabilidad de jobs**: la cola RQ documenta estados (`queued`, `sent`, `error`) en base de datos para análisis retroactivo.
+- **Cumplimiento RGPD**: minimización de datos personales, retención controlada y logs que evitan exponer PII. Ajusta las ventanas de silencio y reglas de consentimiento en `workflows/`.
 
-Mientras `MOODLE_API_ENABLED` permanezca en `false` el sistema seguirá ingiriendo hojas de cálculo (`source: xlsx`) y los playbooks se ejecutarán automáticamente en modo *dry-run*. Esto permite validar reglas y umbrales con datos históricos antes de conectar el flujo completo de notificaciones.
+## Guía de resolución de problemas
 
-Cuando se habilite la API, el servicio `CourseSyncService` centralizará la lectura de cursos y los jobs planificados en `app/jobs/moodle_sync.py` lanzarán los playbooks indicados respetando la configuración de ventanas de silencio.
+| Síntoma | Diagnóstico | Acción recomendada |
+|---------|-------------|--------------------|
+| Importación falla al subir XLSX | Los encabezados no coinciden con el mapeo | Revisar `workflows/mappings/*.yaml` y actualizar las columnas. |
+| Jobs no se ejecutan | Ventana de silencio activa o Redis desconectado | Confirmar configuración de `quiet_hours` y estado del contenedor Redis. |
+| Notificaciones duplicadas | Playbook con cron solapado | Revisar `workflows/playbooks/` y ajustar la cadencia o agrega control de idempotencia. |
+| API devuelve 500 | Migraciones desactualizadas | Ejecutar `alembic upgrade head` y reiniciar el servicio. |
 
-## Observabilidad y trazabilidad
+## Documentación adicional
 
-- El backend inicializa **logging estructurado con structlog** y emite eventos JSON enriquecidos con `job_id`, `job_name` y canal de entrega para seguir cada notificación desde el _enqueue_ hasta la confirmación del adaptador.
-- Los workers de RQ propagan automáticamente el identificador de job y registran los hitos `queued`, `sent`, `error`, etc. en la base de datos (`jobs` + `job_events`).
-- Las auditorías de notificaciones enlazan cada evento con su job correspondiente, lo que permite correlacionar métricas, reintentos y diagnósticos operativos sin exponer información sensible.
-
-## Consideraciones RGPD y operativas
-
-- **Minimización de datos**: la tabla `contacts` almacena únicamente la información estrictamente necesaria (nombre, canales de contacto y atributos opcionales) y separa los cursos/inscripciones en entidades dedicadas (`courses`, `enrollments`).
-- **Retención y acceso**: las notificaciones se auditan con payloads serializados y ligados a un `job_id`, facilitando exportaciones o borrados por estudiante/contacto bajo petición del interesado.
-- **Privacidad en logs**: el logger estructurado evita volcar PII completa, utilizando claves agregadas (`job_id`, `channel`, `status`) para el análisis operativo.
-- **Operaciones seguras**: la correlación de jobs habilita dashboards y alertas que no requieren copiar datos personales; además, los playbooks pueden documentar ventanas de silencio y reglas de consentimiento en `workflows/`.
+- [docs/README.md](docs/README.md): índice completo con visión general, arquitectura extendida y manuales operativos.
+- [docs/beta_operational_manual.md](docs/beta_operational_manual.md): procedimientos detallados para ingesta, reglas, API y notificaciones.
+- Carpeta `tests/`: ejemplos mínimos de uso que sirven como punto de partida para ampliar cobertura.
 
 ## Licencia
 
-Este proyecto se distribuye bajo la licencia MIT. Consulta [LICENSE](LICENSE) para más detalles.
+Este proyecto está protegido por la **Licencia de Uso Restringido de Eloy Moya Martínez**. No se concede permiso para copiar, modificar, distribuir o utilizar el software sin autorización previa, expresa y por escrito. Consulta [LICENSE](LICENSE) para conocer los términos completos y el proceso de solicitud.
