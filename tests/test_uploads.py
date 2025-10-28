@@ -35,7 +35,7 @@ if "multipart" not in sys.modules:
     sys.modules["multipart.multipart"] = multipart_multipart
 
 from app.api import uploads as uploads_module
-from app.models import Base, UploadedFile
+from app.models import Base, Course, Enrollment, Student, UploadedFile
 from app.modules.ingest.xlsx_importer import parse_xlsx
 
 
@@ -74,6 +74,10 @@ def valid_workbook(tmp_path) -> Path:
         "Email": ["ada@example.com"],
         "Fecha caducidad": ["2024-12-01"],
         "Teléfono": ["123456789"],
+        "Curso": ["Prevención de riesgos"],
+        "Horas totales": [20],
+        "Horas cursadas": [12.5],
+        "Fecha caducidad curso": ["2024-12-31"],
     }
     dataframe = pd.DataFrame(data)
     workbook_path = tmp_path / "valid.xlsx"
@@ -112,9 +116,30 @@ def test_upload_endpoint_creates_metadata_record(monkeypatch, tmp_path, db_sessi
     assert payload["summary"]["missing_columns"] == []
     assert payload["summary"]["total_rows"] == 1
     assert payload["summary"]["preview"][0]["Nombre completo"] == "Ada Lovelace"
+    assert payload["ingest"]["courses_created"] == 1
+    assert payload["ingest"]["students_created"] == 1
+    assert payload["ingest"]["enrollments_created"] == 1
 
     records = db_session.execute(select(UploadedFile)).scalars().all()
 
     assert len(records) == 1
     assert records[0].original_name == "alumnos.xlsx"
     assert records[0].stored_path.startswith("uploads/")
+
+    course = db_session.execute(select(Course)).scalar_one()
+    assert course.name == "Prevención de riesgos"
+    assert course.hours_required == 20
+    assert str(course.deadline_date) == "2024-12-31"
+
+    student = db_session.execute(select(Student)).scalar_one()
+    assert student.email == "ada@example.com"
+    assert student.course == course.name
+    assert str(student.certificate_expires_at) == "2024-12-01"
+
+    enrollment = db_session.execute(select(Enrollment)).scalar_one()
+    assert enrollment.course_id == course.id
+    assert enrollment.student_id == student.id
+    assert enrollment.progress_hours == pytest.approx(12.5)
+    assert enrollment.attributes["certificate_expires_at"] == "2024-12-01"
+    assert enrollment.attributes["course_deadline_date"] == "2024-12-31"
+    assert enrollment.attributes["telefono"] == "123456789"
