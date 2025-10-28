@@ -14,9 +14,16 @@ El dispatcher invoca adaptadores registrados bajo un canal (`email`, `whatsapp`,
 
 ### 2.1 Adaptadores CLI (ideal para Java, Go o scripts corporativos)
 
-- Utiliza `CLIAdapter` para ejecutar un proceso externo que lee JSON por `stdin` y escribe JSON por `stdout`. El test `tests/test_cli_adapter.py` muestra un ejemplo mínimo.【F:app/notify/adapters/cli.py†L1-L26】【F:tests/test_cli_adapter.py†L1-L40】
-- El payload que envía el dispatcher incluye claves como `action`, `channel`, `template`, `variables` y metadatos del playbook. El adaptador debe devolver, como mínimo, `status` (`ok`/`error`) y opcionalmente `message_id` o `error`.
-- Para simular WhatsApp en desarrollo existe `WhatsAppCLIAdapter`, que ejecuta un script Python con respuesta determinista. Puedes reemplazarlo por tu JAR Java manteniendo la misma interfaz.【F:app/notify/adapters/whatsapp_cli.py†L1-L34】【F:tests/test_whatsapp_adapter.py†L1-L32】
+**Contrato resumido de `CLIAdapter`.**
+
+- El método `send(payload)` serializa el diccionario recibido a JSON, lo escribe en la entrada estándar del proceso configurado (`command`) y espera la respuesta por la salida estándar.【F:app/notify/adapters/cli.py†L11-L26】
+- El proceso externo debe devolver un JSON válido. Si la salida está vacía se interpreta como `{}`.
+- La prueba `tests/test_cli_adapter.py` ilustra un ciclo completo `payload -> stdin -> stdout -> dict`, útil como plantilla para nuevos adaptadores.【F:tests/test_cli_adapter.py†L1-L40】
+
+**Ejemplo `WhatsAppCLIAdapter`.**
+
+- Extiende el contrato anterior ejecutando un script auxiliar que completa `status` y `message_id` cuando no están presentes, lo que demuestra cómo envolver un proceso CLI y postprocesar la respuesta antes de devolverla al dispatcher.【F:app/notify/adapters/whatsapp_cli.py†L1-L34】
+- El test `tests/test_whatsapp_adapter.py` valida los valores por defecto y cómo se propagan los campos del payload original.【F:tests/test_whatsapp_adapter.py†L1-L32】
 
 **Contrato sugerido (JSON):**
 ```json
@@ -34,6 +41,26 @@ El dispatcher invoca adaptadores registrados bajo un canal (`email`, `whatsapp`,
 ```json
 {"status": "ok", "message_id": "provider-123"}
 ```
+
+**Pseudocódigo Java para un adaptador CLI.**
+
+```java
+public final class WhatsAppCli {
+  public static void main(String[] args) throws Exception {
+    var reader = new java.io.BufferedReader(new java.io.InputStreamReader(System.in));
+    var payload = new com.fasterxml.jackson.databind.ObjectMapper().readTree(reader);
+
+    var response = new com.fasterxml.jackson.databind.ObjectNode(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance);
+    response.setAll((com.fasterxml.jackson.databind.node.ObjectNode) payload);
+    response.putIfAbsent("status", "ok");
+    response.putIfAbsent("message_id", java.util.UUID.randomUUID().toString());
+
+    System.out.println(response.toString());
+  }
+}
+```
+
+El ejemplo anterior usa Jackson, pero cualquier librería JSON que lea desde `System.in` y escriba en `System.out` servirá para cumplir el contrato.
 
 ### 2.2 Adaptadores HTTP o SMTP
 
@@ -60,6 +87,14 @@ El dispatcher invoca adaptadores registrados bajo un canal (`email`, `whatsapp`,
 2. **Generar JARs auto-contenidos**. Si el adaptador Java depende de bibliotecas externas, usa `mvn package` o `gradle shadowJar` para obtener un ejecutable único. Configura `CLIAdapter(command=["java", "-jar", "tu-adapter.jar"])` para invocarlo.【F:app/notify/adapters/cli.py†L1-L26】
 3. **Registrar el adaptador**. En la inicialización del dispatcher, añade el adaptador al diccionario de canales. Si usas FastAPI, puedes hacerlo al crear la instancia en el contenedor de dependencias o en un módulo específico.
 4. **Documentar el contrato**. Añade un apartado en `docs/extensibility-guide.md` (este archivo) o crea un doc propio con ejemplos de entrada/salida para que otros becarios puedan iterar sin ambigüedades.
+
+### 4.1 Registrar un nuevo adaptador CLI en el dispatcher
+
+1. Importa tu clase (por ejemplo, `from app.notify.adapters.whatsapp_cli import WhatsAppCLIAdapter`).
+2. Actualiza la función `_create_dispatcher` para añadir una entrada al diccionario `adapters`, siguiendo el patrón existente para `email` y `whatsapp`. Cada clave corresponde al canal que se usará en los playbooks, y el valor es una instancia del adaptador.【F:app/notify/worker.py†L20-L38】
+3. Asegúrate de que `NotificationDispatcher` recibe el diccionario completo al inicializarse, ya que normaliza las claves a minúsculas y orquesta la invocación de `send(payload)` para cada acción de notificación.【F:app/notify/dispatcher.py†L92-L138】
+
+Con estos pasos, el dispatcher reconocerá el nuevo canal y tus flujos podrán enviar notificaciones usando el adaptador CLI implementado.
 
 ## 5. Checklist de extensibilidad
 
