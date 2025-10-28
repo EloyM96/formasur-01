@@ -76,4 +76,11 @@ def parse_xlsx(
     )
 
 
-__all__ = ["ImportSummary", "parse_xlsx"]
+def load_mapping(mapping_path: Path | None = None) -> dict[str, Any]:
+    """Expose mapping loading for consumers that need to read full datasets."""
+
+    effective_mapping_path = mapping_path or DEFAULT_MAPPING_PATH
+    return _load_mapping(effective_mapping_path)
+
+
+__all__ = ["ImportSummary", "parse_xlsx", "load_mapping"]

@@ -1,3 +1,5 @@
 """Utilities for ingesting external data sources."""
 
-__all__ = ["xlsx_importer"]
+from . import course_loader, xlsx_importer
+
+__all__ = ["course_loader", "xlsx_importer"]

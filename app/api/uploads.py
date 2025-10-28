@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import UploadedFile
-from ..modules.ingest import xlsx_importer
+from ..modules.ingest import course_loader
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 UPLOADS_DIR = PROJECT_ROOT / "uploads"
@@ -79,7 +79,7 @@ async def upload_file(
     db.commit()
     db.refresh(upload)
 
-    summary = xlsx_importer.parse_xlsx(stored_path)
+    result = course_loader.ingest_workbook(stored_path, db=db)
 
     return {
         "file": {
@@ -89,5 +89,6 @@ async def upload_file(
             "mime": upload.mime,
             "size": upload.size,
         },
-        "summary": jsonable_encoder(asdict(summary)),
+        "summary": jsonable_encoder(asdict(result.summary)),
+        "ingest": jsonable_encoder(asdict(result.stats)),
     }
