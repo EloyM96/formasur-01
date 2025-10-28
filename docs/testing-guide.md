@@ -19,6 +19,14 @@ Este documento explica cómo preparar datos de prueba, ejecutar la batería auto
 
 > Los fixtures compartidos se definen en `tests/conftest.py` e incluyen bases de datos temporales, colas en memoria y utilidades para construir playbooks de prueba.【F:tests/conftest.py†L1-L170】
 
+## 2.1. Flujos recomendados
+
+Cuando quieras validar cambios en áreas específicas sin esperar a que termine la suite completa, lanza subconjuntos orientados a los módulos responsables:
+
+- Dispatcher de notificaciones: `pytest tests/test_dispatcher.py`. El flujo refleja las rutas principales de `app/notify/dispatcher.py`, incluyendo la orquestación de adaptadores y la coordinación con la cola RQ.【F:app/notify/dispatcher.py†L1-L200】
+- Motor de reglas: `pytest tests/test_rules_engine.py`. Ayuda a validar que las evaluaciones delegadas en `app/rules/engine.py` siguen siendo deterministas frente a nuevos playbooks.【F:app/rules/engine.py†L1-L200】
+- Cargador de hojas de cálculo: `pytest tests/test_uploads.py -k parse_xlsx` te permite comprobar rápidamente cambios en la ingesta de XLSX sin ejecutar escenarios completos.【F:app/modules/ingest/xlsx_importer.py†L1-L200】
+
 ## 3. Datos de ejemplo para pruebas manuales
 
 - **XLSX de referencia**. Puedes generar uno siguiendo la misma plantilla que utiliza el fixture `valid_workbook` en los tests: crea un DataFrame con columnas como `Nombre completo`, `Email`, `Horas cursadas`, `Horas totales` y fechas ISO, luego exporta con `pandas.DataFrame.to_excel`. El fragmento exacto está en `tests/test_uploads.py` y sirve como guía.【F:tests/test_uploads.py†L52-L118】
@@ -46,3 +54,7 @@ Para validar un flujo extremo a extremo sin mover datos reales:
 - [ ] Mantener las anotaciones de tipo y los docstrings actualizados para facilitar el seguimiento en revisiones.
 
 Seguir esta guía garantiza que las pruebas cubren los flujos críticos y que los datos de ejemplo están alineados con la documentación y el código fuente.
+
+## Anexo. Preguntas frecuentes
+
+- **¿Qué hacer si falta PyYAML?**. `parse_xlsx` necesita PyYAML para cargar el mapeo de columnas; instala la dependencia con `pip install PyYAML` o incluye el extra `.[dev]`. El módulo lanza un mensaje explícito ("PyYAML es necesario para cargar el fichero de mapeos") cuando detecta la ausencia de la librería para evitar fallos silenciosos.【F:app/modules/ingest/xlsx_importer.py†L1-L200】
