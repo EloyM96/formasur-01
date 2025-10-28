@@ -49,6 +49,29 @@ El dispatcher invoca adaptadores registrados bajo un canal (`email`, `whatsapp`,
 - `CourseSyncService` es la pieza central: cuando la API está activada consulta Moodle, transforma la respuesta en el mismo formato que el XLSX y reusa el pipeline de ingesta, evitando duplicar código.【F:app/services/sync_courses.py†L1-L123】
 - Programa sincronizaciones periódicas con `schedule_moodle_sync_jobs`. Tras cada sincronización, se ejecuta el playbook que definas para mantener notificaciones actualizadas.【F:app/jobs/moodle_sync.py†L1-L47】
 
+#### Checklist de despliegue
+
+1. Verifica que la variable `MOODLE_API_ENABLED` esté alineada con el entorno objetivo (mantenerla en `false` en pruebas locales y activarla en preproducción/producción cuando la API esté lista).
+2. Define `MOODLE_TOKEN` con un valor válido para el entorno, idealmente mediante secretos gestionados y no hardcodeados.
+3. Confirma que las respuestas de Moodle incluyan listas sin excepciones ni códigos de error; cualquier payload con `{"exception": ...}` debe bloquear el despliegue hasta que soporte técnico confirme su corrección.
+4. Añade validaciones automáticas en los pipelines (por ejemplo, tests o jobs de verificación) que ejecuten el conector con criterios básicos y aseguren que el formato JSON coincide con lo esperado.
+
+#### Ejemplo paso a paso de `CourseSyncService.sync()`
+
+**Modo API (`MOODLE_API_ENABLED=true`):**
+
+1. El servicio detecta que `use_moodle_api` es `True` porque existe `MoodleRESTClient` configurado con `MOODLE_TOKEN` y URL base.
+2. Se invoca `_from_rest_api()`, que a su vez llama a `fetch_courses()` y recibe la lista de cursos en bruto desde Moodle.
+3. Cada entrada se transforma mediante `_map_rest_course`, normalizando nombres, fechas y atributos extra.
+4. Se devuelve un `CourseSyncResult` con `source="moodle"` y `dry_run=False`, permitiendo que los playbooks ejecuten acciones reales.
+
+**Modo XLSX (`MOODLE_API_ENABLED=false`):**
+
+1. Al deshabilitar la API, `use_moodle_api` retorna `False` y `sync()` exige un `source_path` apuntando al XLSX exportado.
+2. `_from_xlsx()` lee el fichero con `pandas`, valida que incluya `name`, `hours_required` y `deadline_date` y recorre cada fila.
+3. `_map_xlsx_row` convierte las filas a `CourseModel`, generando atributos adicionales si existen columnas personalizadas.
+4. El resultado final es un `CourseSyncResult` con `source="xlsx"` y `dry_run=True`, manteniendo los playbooks en modo seguro hasta habilitar la API.
+
 ### 3.2 Otros orígenes (Prevengos, CRM, etc.)
 
 - Utiliza el mismo patrón que con Moodle: crea un cliente en `app/connectors/<nombre>/` con métodos claros, encapsula la lógica de mapeo en un servicio (`app/services/...`) y reutiliza `WorkflowRunner` para desencadenar acciones.
