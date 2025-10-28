@@ -141,6 +141,11 @@ try:  # pragma: no cover - prefer real SQLAlchemy when installed
         __tablename__ = "notifications"
 
         id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        enrollment_id: Mapped[int | None] = mapped_column(
+            ForeignKey("enrollments.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
         playbook: Mapped[str | None] = mapped_column(String(255), nullable=True)
         channel: Mapped[str] = mapped_column(String(50), nullable=False)
         adapter: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -261,6 +266,7 @@ except ModuleNotFoundError:  # pragma: no cover - lightweight fallback for tests
     @dataclass
     class Notification(Base):  # type: ignore[override]
         id: int | None = None
+        enrollment_id: int | None = None
         playbook: str | None = None
         channel: str = ""
         adapter: str = ""
@@ -319,6 +325,7 @@ class NotificationModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int | None = Field(default=None, description="Database identifier of the entry")
+    enrollment_id: int | None = None
     playbook: str | None = None
     channel: str
     adapter: str
