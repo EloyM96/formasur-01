@@ -43,6 +43,7 @@ Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de p
 
 ## Documentación operativa
 
+- [Portal de documentación completa](docs/README.md): índice que enlaza con la visión general, la arquitectura, el runbook operativo, la guía de pruebas y las instrucciones de extensibilidad para becarios.
 - [Manual operativo beta](docs/beta_operational_manual.md): guía paso a paso que documenta la ingesta del XLSX, la estructura de la base de datos, los endpoints REST disponibles, el motor de reglas y la traza de notificaciones.
 
 ## Puesta en marcha rápida
