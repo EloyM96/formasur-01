@@ -63,6 +63,19 @@ Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de p
 
 Con estos pasos el equipo dispone de una API funcional en minutos y una base homogénea para ejecutar pruebas, migraciones y jobs de cola.
 
+## Integración con Moodle
+
+El monolito incluye una capa de conectores (`app/connectors/moodle/`) preparada para consumir los servicios REST y SOAP de Moodle mediante token. La activación de la API se controla desde variables de entorno expuestas en `app/config.py`:
+
+- `MOODLE_API_ENABLED`: activa el uso de la API oficial en lugar de los ficheros XLSX exportados manualmente.
+- `MOODLE_TOKEN`: token emitido por Moodle para los servicios web.
+- `MOODLE_REST_BASE_URL`: URL base del endpoint REST (`https://moodle.example/webservice`).
+- `MOODLE_SOAP_WSDL_URL`: WSDL del servicio SOAP legacy en caso de necesitarlo.
+
+Mientras `MOODLE_API_ENABLED` permanezca en `false` el sistema seguirá ingiriendo hojas de cálculo (`source: xlsx`) y los playbooks se ejecutarán automáticamente en modo *dry-run*. Esto permite validar reglas y umbrales con datos históricos antes de conectar el flujo completo de notificaciones.
+
+Cuando se habilite la API, el servicio `CourseSyncService` centralizará la lectura de cursos y los jobs planificados en `app/jobs/moodle_sync.py` lanzarán los playbooks indicados respetando la configuración de ventanas de silencio.
+
 ## Observabilidad y trazabilidad
 
 - El backend inicializa **logging estructurado con structlog** y emite eventos JSON enriquecidos con `job_id`, `job_name` y canal de entrega para seguir cada notificación desde el _enqueue_ hasta la confirmación del adaptador.

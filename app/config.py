@@ -23,5 +23,11 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str | None = None
 
+    # Moodle integration
+    moodle_api_enabled: bool = False
+    moodle_token: str | None = None
+    moodle_rest_base_url: str | None = None
+    moodle_soap_wsdl_url: str | None = None
+
 
 settings = Settings()
