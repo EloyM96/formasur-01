@@ -1,6 +1,7 @@
 """Load Moodle PRL workbooks and persist courses, students and enrollments."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ def ingest_workbook(
     db: Session,
     *,
     mapping_path: Path | None = None,
+    workbook_label: str | None = None,
 ) -> LoaderResult:
     """Persist Moodle enrollments after validating the spreadsheet structure."""
 
@@ -50,11 +52,25 @@ def ingest_workbook(
     if not summary.is_valid:
         return LoaderResult(summary=summary, stats=stats)
 
-    mapping = xlsx_importer.load_mapping(mapping_path).get("columns", {})
-    dataframe = pd.read_excel(file_path, engine="openpyxl")
+    mapping = xlsx_importer.load_mapping(mapping_path)
+    column_map: dict[str, xlsx_importer.ColumnConfig] = mapping.get("columns", {})
+    defaults: dict[str, Any] = mapping.get("defaults", {})
+    sheet_name = mapping.get("sheet_name")
+
+    dataframe = pd.read_excel(
+        file_path,
+        engine="openpyxl",
+        sheet_name=sheet_name if sheet_name is not None else 0,
+    )
+
+    label_source = workbook_label or file_path.name
+    context = {
+        "workbook_stem": file_path.stem,
+        "workbook_label": Path(label_source).stem,
+    }
 
     for raw_row in dataframe.to_dict(orient="records"):
-        normalized = _normalize_row(raw_row, mapping)
+        normalized = _normalize_row(raw_row, column_map, defaults, context)
 
         email = normalized.get("email")
         if not email:
@@ -75,7 +91,7 @@ def _get_or_create_course(
     name = normalized.get("course_name") or "Curso sin nombre"
     hours_required = normalized.get("course_hours_required")
     if hours_required is None:
-        hours_required = int(normalized.get("progress_hours") or 0)
+        hours_required = normalized.get("progress_hours") or 0
     deadline_date = normalized.get("course_deadline_date")
     certificate_date = normalized.get("certificate_expires_at")
     if deadline_date is None:
@@ -205,24 +221,60 @@ def _build_enrollment_attributes(normalized: dict[str, Any]) -> dict[str, Any]:
     if telefono:
         attributes["telefono"] = str(telefono)
 
+    first_access = normalized.get("first_access_at")
+    if isinstance(first_access, datetime):
+        attributes["first_access_at"] = first_access.isoformat()
+    elif isinstance(first_access, date):
+        attributes["first_access_at"] = datetime.combine(first_access, datetime.min.time()).isoformat()
+
+    last_access = normalized.get("last_access_at")
+    if isinstance(last_access, datetime):
+        attributes["last_access_at"] = last_access.isoformat()
+    elif isinstance(last_access, date):
+        attributes["last_access_at"] = datetime.combine(last_access, datetime.min.time()).isoformat()
+
+    raw_total_time = normalized.get("raw_total_time")
+    if raw_total_time:
+        attributes["raw_total_time"] = str(raw_total_time)
+
     return attributes
 
 
 def _normalize_row(
-    raw_row: dict[str, Any], column_map: dict[str, str]
+    raw_row: dict[str, Any],
+    column_map: dict[str, xlsx_importer.ColumnConfig],
+    defaults: dict[str, Any],
+    context: dict[str, Any],
 ) -> dict[str, Any]:
     def get_value(key: str) -> Any:
-        column = column_map.get(key)
-        if not column:
+        config = column_map.get(key)
+        if config is None:
             return None
-        value = raw_row.get(column)
-        if isinstance(value, float) and pd.isna(value):
+        for column in config.sources:
+            value = raw_row.get(column)
+            if value is None:
+                continue
+            if isinstance(value, float) and pd.isna(value):
+                continue
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped:
+                    continue
+                return stripped
+            if pd.isna(value):  # type: ignore[arg-type]
+                continue
+            return value
+        return None
+
+    def get_default(key: str) -> Any:
+        if key not in defaults:
             return None
-        if pd.isna(value):  # type: ignore[arg-type]
-            return None
+        value = defaults[key]
         if isinstance(value, str):
-            value = value.strip()
-            return value or None
+            try:
+                return value.format(**context)
+            except (KeyError, ValueError):  # pragma: no cover - defensive
+                return value
         return value
 
     def to_date(value: Any) -> date | None:
@@ -235,10 +287,29 @@ def _normalize_row(
         if isinstance(value, date):
             return value
         if isinstance(value, str):
-            parsed = pd.to_datetime(value, errors="coerce")
+            parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
             if pd.isna(parsed):
                 return None
             return parsed.date()
+        return None
+
+    def to_datetime(value: Any) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, pd.Timestamp):
+            return value.to_pydatetime()
+        if isinstance(value, date):
+            return datetime.combine(value, datetime.min.time())
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned or cleaned.lower() == "no visitado":
+                return None
+            parsed = pd.to_datetime(cleaned, errors="coerce", dayfirst=True)
+            if pd.isna(parsed):
+                return None
+            return parsed.to_pydatetime()
         return None
 
     def to_float(value: Any) -> float | None:
@@ -256,26 +327,84 @@ def _normalize_row(
                 return None
         return None
 
+    def to_duration_hours(value: Any) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            if pd.isna(value):  # type: ignore[arg-type]
+                return None
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned or cleaned.lower() == "no visitado":
+                return 0.0
+            total_seconds = 0
+            for amount, unit in re.findall(r"(\d+)\s*([hms])", cleaned.lower()):
+                quantity = int(amount)
+                if unit == "h":
+                    total_seconds += quantity * 3600
+                elif unit == "m":
+                    total_seconds += quantity * 60
+                elif unit == "s":
+                    total_seconds += quantity
+            if total_seconds == 0:
+                numeric = to_float(cleaned)
+                if numeric is not None:
+                    return numeric
+                return None
+            return total_seconds / 3600
+        return None
+
     normalized: dict[str, Any] = {}
 
-    normalized["full_name"] = get_value("full_name")
+    first_name = get_value("first_name")
+    last_name = get_value("last_name")
+    full_name_parts = [part for part in [first_name, last_name] if part]
+    normalized["full_name"] = " ".join(full_name_parts) or get_value("full_name")
+    if not normalized["full_name"]:
+        normalized["full_name"] = get_default("full_name") or get_value("email")
+
     normalized["email"] = get_value("email")
+
     telefono = get_value("telefono")
+    if telefono is None:
+        telefono = get_default("telefono")
     normalized["telefono"] = str(telefono) if telefono is not None else None
-    normalized["course_name"] = get_value("course_name")
-    normalized["course_hours_required"] = None
+
+    course_name = get_value("course_name")
+    if course_name is None:
+        course_name = get_default("course_name")
+    normalized["course_name"] = course_name
 
     hours_required = get_value("course_hours_required")
-    if hours_required is not None:
-        hours_value = to_float(hours_required)
-        if hours_value is not None:
-            normalized["course_hours_required"] = int(round(hours_value))
+    if hours_required is None:
+        hours_required = get_default("course_hours_required")
+    hours_value = to_float(hours_required)
+    normalized["course_hours_required"] = int(round(hours_value)) if hours_value is not None else None
 
-    normalized["course_deadline_date"] = to_date(get_value("course_deadline_date"))
-    normalized["certificate_expires_at"] = to_date(
-        get_value("certificate_expires_at")
+    deadline = get_value("course_deadline_date")
+    if deadline is None:
+        deadline = get_default("course_deadline_date")
+    normalized["course_deadline_date"] = to_date(deadline)
+
+    certificate = get_value("certificate_expires_at")
+    if certificate is None:
+        certificate = get_default("certificate_expires_at")
+    normalized["certificate_expires_at"] = to_date(certificate)
+
+    progress = get_value("progress_hours")
+    progress_float = to_float(progress)
+    raw_total_time = get_value("total_time")
+    duration_hours = to_duration_hours(raw_total_time)
+    normalized["progress_hours"] = (
+        progress_float
+        if progress_float is not None
+        else (duration_hours if duration_hours is not None else 0.0)
     )
-    normalized["progress_hours"] = to_float(get_value("progress_hours")) or 0.0
+
+    normalized["raw_total_time"] = raw_total_time
+    normalized["first_access_at"] = to_datetime(get_value("first_access"))
+    normalized["last_access_at"] = to_datetime(get_value("last_access"))
 
     return normalized
 
