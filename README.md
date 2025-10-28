@@ -41,6 +41,10 @@ Para acelerar el onboarding del equipo se incluyen pruebas de concepto ejecutabl
 
 Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de partida para ampliar la cobertura con escenarios reales.
 
+## Documentación operativa
+
+- [Manual operativo beta](docs/beta_operational_manual.md): guía paso a paso que documenta la ingesta del XLSX, la estructura de la base de datos, los endpoints REST disponibles, el motor de reglas y la traza de notificaciones.
+
 ## Puesta en marcha rápida
 
 1. Clona el repositorio y crea el archivo de variables de entorno a partir de la plantilla:
