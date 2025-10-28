@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.models import Course, Enrollment, Student
 from app.rules.engine import RuleSet
+from app.services import enrollments as enrollment_service
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -99,19 +100,22 @@ def list_non_compliant_students(
     non_compliant_rows: list[dict[str, Any]] = []
 
     for enrollment, student, course_obj in query.all():
-        payload = _serialize_row(enrollment, student, course_obj)
-        rule_context = {"row": _build_rule_row(payload)}
-        rule_results = ruleset.evaluate(rule_context)
-        violations = [key for key, matched in rule_results.items() if matched]
+        evaluation = enrollment_service.evaluate_enrollment(
+            enrollment=enrollment,
+            student=student,
+            course=course_obj,
+            ruleset=ruleset,
+        )
 
-        if rule and not rule_results.get(rule):
+        if rule and not evaluation.rule_results.get(rule):
             continue
-        if not violations:
+        if not evaluation.violations:
             continue
 
+        payload = dict(evaluation.payload)
         payload.update({
-            "rule_results": rule_results,
-            "violations": violations,
+            "rule_results": evaluation.rule_results,
+            "violations": evaluation.violations,
         })
         non_compliant_rows.append(payload)
 
@@ -119,51 +123,6 @@ def list_non_compliant_students(
     paginated = non_compliant_rows[offset : offset + limit]
 
     return {"total": total, "items": paginated}
-
-
-def _serialize_row(
-    enrollment: Enrollment, student: Student, course: Course | None
-) -> dict[str, Any]:
-    return {
-        "id": enrollment.id,
-        "status": enrollment.status,
-        "progress_hours": float(enrollment.progress_hours or 0.0),
-        "last_notified_at": _to_iso(enrollment.last_notified_at),
-        "student": {
-            "id": student.id,
-            "full_name": student.full_name,
-            "email": student.email,
-            "certificate_expires_at": _to_iso(student.certificate_expires_at),
-        },
-        "course": None
-        if course is None
-        else {
-            "id": course.id,
-            "name": course.name,
-            "deadline_date": _to_iso(course.deadline_date),
-            "hours_required": course.hours_required,
-        },
-        "deadline_date": _to_iso(course.deadline_date) if course else None,
-        "hours_required": course.hours_required if course else None,
-    }
-
-
-def _build_rule_row(payload: dict[str, Any]) -> dict[str, Any]:
-    course = payload.get("course") or {}
-    student = payload.get("student") or {}
-    return {
-        "certificate_expires_at": student.get("certificate_expires_at"),
-        "deadline_date": course.get("deadline_date"),
-        "progress_hours": payload.get("progress_hours"),
-        "hours_required": course.get("hours_required"),
-        "status": payload.get("status"),
-    }
-
-
-def _to_iso(value: Any) -> str | None:
-    if hasattr(value, "isoformat"):
-        return value.isoformat()  # type: ignore[call-arg]
-    return None
 
 
 def _parse_date(value: str | None) -> date | None:

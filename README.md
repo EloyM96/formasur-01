@@ -63,6 +63,20 @@ Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de p
 
 Con estos pasos el equipo dispone de una API funcional en minutos y una base homogénea para ejecutar pruebas, migraciones y jobs de cola.
 
+## Flujo beta de seguimiento PRL
+
+El MVP ya implementa el flujo completo exigido para las pruebas beta del operario:
+
+1. **Carga del XLSX Moodle** (`POST /uploads`): el fichero se valida contra el mapeo `workflows/mappings/moodle_prl.yaml`. Se genera un registro en `uploaded_files`, se guarda una copia física y se invoca al cargador `app/modules/ingest/course_loader.py`.
+2. **Normalización e inserción**: se crean/actualizan cursos, alumnado y matrículas. Cuando faltan datos de fecha u horas, el sistema los aproxima (ej. caducidad → `certificate_expires_at`) y permite su corrección manual vía API.
+3. **Resumen operativo** (`GET /courses`): devuelve todos los cursos con métricas agregadas por matrícula (`total_enrollments`, `non_compliant_enrollments`, `zero_hours_enrollments`) y con el conteo de avisos emitidos por canal (`notifications.by_channel`).
+4. **Detalle del curso** (`GET /courses/{id}`): muestra cada matrícula con el resultado de las reglas declarativas, el indicador `has_no_activity` para quienes nunca entraron (0 h cursadas) y los envíos previos clasificados por canal (`sms`, `email`, `whatsapp`, …).
+5. **Correcciones manuales** (`PATCH /courses/{id}`): permite fijar `deadline_date` y `hours_required` cuando el XLSX carece de esos datos o se detectan desviaciones.
+6. **Filtro de incumplimientos** (`GET /students/non-compliance`): aplica el ruleset `app/rules/rulesets/enrollments.yaml` para extraer destacados (certificado caducado, caducidad cercana, horas insuficientes) y admite filtros por curso, horas, fechas o regla concreta.
+7. **Histórico de avisos** (`GET /notifications`): consulta cruzada por canal, playbook o destinatario. Cada notificación queda ligada a la matrícula (`notifications.enrollment_id`) para mostrar en tiempo real los envíos previos desde la pantalla del operario.
+
+> **Nota:** Cuando se habilite la API de Moodle (`MOODLE_API_ENABLED=true`), el servicio `CourseSyncService` reemplazará la ingesta XLSX reutilizando las mismas reglas, métricas y API REST ya expuestas.
+
 ## Integración con Moodle
 
 El monolito incluye una capa de conectores (`app/connectors/moodle/`) preparada para consumir los servicios REST y SOAP de Moodle mediante token. La activación de la API se controla desde variables de entorno expuestas en `app/config.py`:
