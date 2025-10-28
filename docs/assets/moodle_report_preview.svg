@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">Vista previa del reporte Moodle</title>
+  <desc id="desc">Tabla con las primeras filas del reporte de actividad exportado desde Moodle.</desc>
+  <style>
+    text { font-family: 'DejaVu Sans', Arial, sans-serif; fill: #1f2933; font-size: 18px; }
+    .header { font-weight: 700; fill: #0b7285; }
+    .cell { fill: #f8fafc; }
+    rect { stroke: #94a3b8; stroke-width: 2; fill: #ffffff; }
+  </style>
+  <rect x="20" y="20" width="1160" height="280" rx="12" ry="12" fill="#ffffff" />
+  <text class="header" x="40" y="60">Nombre</text>
+  <text class="header" x="220" y="60">Apellidos</text>
+  <text class="header" x="460" y="60">Correo</text>
+  <text class="header" x="800" y="60">Primer acceso</text>
+  <text class="header" x="980" y="60">Último acceso</text>
+  <text class="header" x="1120" y="60">Tiempo total</text>
+  <text x="40" y="105">Ana</text>
+  <text x="220" y="105">García</text>
+  <text x="460" y="105">ana.garcia@example.com</text>
+  <text x="800" y="105">21/10/2025</text>
+  <text x="980" y="105">30/10/2025</text>
+  <text x="1120" y="105">02h 15m 00s</text>
+  <text x="40" y="145">Juan</text>
+  <text x="220" y="145">Rodríguez</text>
+  <text x="460" y="145">juan.rodriguez@example.com</text>
+  <text x="800" y="145">No visitado</text>
+  <text x="980" y="145">No visitado</text>
+  <text x="1120" y="145">00h 00m 00s</text>
+  <text x="40" y="185">María</text>
+  <text x="220" y="185">López</text>
+  <text x="460" y="185">maria.lopez@example.com</text>
+  <text x="800" y="185">22/10/2025</text>
+  <text x="980" y="185">28/10/2025</text>
+  <text x="1120" y="185">01h 42m 10s</text>
+  <text x="40" y="225">Carlos</text>
+  <text x="220" y="225">Martínez</text>
+  <text x="460" y="225">carlos.martinez@example.com</text>
+  <text x="800" y="225">23/10/2025</text>
+  <text x="980" y="225">31/10/2025</text>
+  <text x="1120" y="225">00h 48m 33s</text>
+  <text x="40" y="265">Lucía</text>
+  <text x="220" y="265">Sánchez</text>
+  <text x="460" y="265">lucia.sanchez@example.com</text>
+  <text x="800" y="265">21/10/2025</text>
+  <text x="980" y="265">27/10/2025</text>
+  <text x="1120" y="265">02h 10m 24s</text>
+</svg>

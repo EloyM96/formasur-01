@@ -7,18 +7,18 @@ quiet_hours:
   end: "08:00"
 source:
   kind: xlsx
-  path: uploads/moodle_export.xlsx
+  path: docs/assets/moodle_report_example.xlsx
 mapping: workflows/mappings/moodle_prl.yaml
-ruleset: app/rules/rulesets/sample.yaml
+ruleset: app/rules/rulesets/enrollments.yaml
 actions:
   - type: notify
-    channel: whatsapp
-    template: aviso_vencimiento
-    to: "{{ row.telefono }}"
-    when: "{{ rule_results.vencido }}"
-  - type: notify
     channel: email
-    template: recordatorio.html
-    subject: "Recordatorio PRL"
+    subject: "Seguimiento PRL: {{ row.course_name }}"
+    body: |
+      Hola {{ row.full_name }},
+
+      Hemos detectado que acumulas {{ row.progress_hours | default(0) }} horas en el curso "{{ row.course_name }}" y necesitas completar {{ row.course_hours_required }} antes del {{ row.course_deadline_date }}.
+
+      Si ya has tenido incidencias de acceso, responde a este mensaje para ayudarte. En caso contrario, recuerda conectarte cuanto antes para evitar el vencimiento del {{ row.certificate_expires_at }}.
     to: "{{ row.email }}"
-    when: "{{ rule_results.proximo }}"
+    when: "{{ rule_results.vencido or rule_results.vence_pronto or rule_results.horas_insuficientes or (row.progress_hours | default(0)) <= 0 }}"

@@ -39,6 +39,10 @@ Para acelerar el onboarding del equipo se incluyen pruebas de concepto ejecutabl
 4. **Conecta acciones personalizadas** creando adaptadores adicionales dentro de `app/notify/adapters/` reutilizando la firma de `CLIAdapter` o exportando clases equivalentes (por ejemplo un `EmailSMTPAdapter`).
 5. **Registra jobs** mediante `Scheduler.schedule_interval` empleando las quiet hours definidas en el playbook para coordinar la ejecución con la cola de notificaciones.
 
+### Plantilla de reporte Moodle y datos de ejemplo
+
+El repositorio incluye un reporte de actividad mínimo exportado desde Moodle en `docs/assets/moodle_report_example.xlsx`. El mapeo `workflows/mappings/moodle_prl.yaml` espera exactamente las columnas `Nombre`, `Apellidos`, `Correo`, `Primer acceso`, `Último acceso` y `Tiempo total`. La ingesta combina el nombre y apellidos, convierte la duración (`Tiempo total`) a horas decimales, conserva los accesos como atributos de matrícula y asigna el nombre del curso a partir del nombre original del fichero (sin extensión). Puedes abrir el fichero para validar el formato o duplicarlo para generar nuevos casos de prueba manuales.
+
 Revisa los tests en `tests/` para ver ejemplos mínimos de uso y como punto de partida para ampliar la cobertura con escenarios reales.
 
 ## Documentación operativa
@@ -73,7 +77,7 @@ Con estos pasos el equipo dispone de una API funcional en minutos y una base hom
 El MVP ya implementa el flujo completo exigido para las pruebas beta del operario:
 
 1. **Carga del XLSX Moodle** (`POST /uploads`): el fichero se valida contra el mapeo `workflows/mappings/moodle_prl.yaml`. Se genera un registro en `uploaded_files`, se guarda una copia física y se invoca al cargador `app/modules/ingest/course_loader.py`.
-2. **Normalización e inserción**: se crean/actualizan cursos, alumnado y matrículas. Cuando faltan datos de fecha u horas, el sistema los aproxima (ej. caducidad → `certificate_expires_at`) y permite su corrección manual vía API.
+2. **Normalización e inserción**: se crean/actualizan cursos, alumnado y matrículas. Cuando faltan datos de fecha u horas, el sistema estima los valores a partir del propio XLSX (duración máxima observada → `hours_required`, última conexión → `deadline_date`) y permite su corrección manual vía API.
 3. **Resumen operativo** (`GET /courses`): devuelve todos los cursos con métricas agregadas por matrícula (`total_enrollments`, `non_compliant_enrollments`, `zero_hours_enrollments`) y con el conteo de avisos emitidos por canal (`notifications.by_channel`).
 4. **Detalle del curso** (`GET /courses/{id}`): muestra cada matrícula con el resultado de las reglas declarativas, el indicador `has_no_activity` para quienes nunca entraron (0 h cursadas) y los envíos previos clasificados por canal (`sms`, `email`, `whatsapp`, …).
 5. **Correcciones manuales** (`PATCH /courses/{id}`): permite fijar `deadline_date` y `hours_required` cuando el XLSX carece de esos datos o se detectan desviaciones.

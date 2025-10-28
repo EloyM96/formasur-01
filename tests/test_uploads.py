@@ -70,29 +70,27 @@ def db_session(session_factory):
 @pytest.fixture()
 def valid_workbook(tmp_path) -> Path:
     data = {
-        "Nombre completo": ["Ada Lovelace"],
-        "Email": ["ada@example.com"],
-        "Fecha caducidad": ["2024-12-01"],
-        "Teléfono": ["123456789"],
-        "Curso": ["Prevención de riesgos"],
-        "Horas totales": [20],
-        "Horas cursadas": [12.5],
-        "Fecha caducidad curso": ["2024-12-31"],
+        "Nombre": ["Ana", "Juan"],
+        "Apellidos": ["García", "Rodríguez"],
+        "Correo": ["ana@example.com", "juan@example.com"],
+        "Primer acceso": ["21/10/2025", "No visitado"],
+        "Último acceso": ["30/10/2025", "No visitado"],
+        "Tiempo total": ["02h 15m 00s", "00h 00m 00s"],
     }
     dataframe = pd.DataFrame(data)
     workbook_path = tmp_path / "valid.xlsx"
-    dataframe.to_excel(workbook_path, index=False)
+    dataframe.to_excel(workbook_path, index=False, sheet_name="reporte")
     return workbook_path
 
 
 def test_parse_xlsx_identifies_missing_columns(tmp_path):
-    dataframe = pd.DataFrame({"Nombre completo": ["Grace Hopper"]})
+    dataframe = pd.DataFrame({"Nombre": ["Grace"]})
     workbook_path = tmp_path / "invalid.xlsx"
-    dataframe.to_excel(workbook_path, index=False)
+    dataframe.to_excel(workbook_path, index=False, sheet_name="reporte")
 
     summary = parse_xlsx(workbook_path)
 
-    assert "Email" in summary.missing_columns
+    assert "Correo" in summary.missing_columns
     assert any("Columnas faltantes" in error for error in summary.errors)
 
 
@@ -114,11 +112,12 @@ def test_upload_endpoint_creates_metadata_record(monkeypatch, tmp_path, db_sessi
     assert payload["file"]["original_name"] == "alumnos.xlsx"
     assert payload["file"]["size"] > 0
     assert payload["summary"]["missing_columns"] == []
-    assert payload["summary"]["total_rows"] == 1
-    assert payload["summary"]["preview"][0]["Nombre completo"] == "Ada Lovelace"
+    assert payload["summary"]["total_rows"] == 2
+    assert payload["summary"]["preview"][0]["Nombre"] == "Ana"
+    assert payload["summary"]["preview"][0]["Correo"] == "ana@example.com"
     assert payload["ingest"]["courses_created"] == 1
-    assert payload["ingest"]["students_created"] == 1
-    assert payload["ingest"]["enrollments_created"] == 1
+    assert payload["ingest"]["students_created"] == 2
+    assert payload["ingest"]["enrollments_created"] == 2
 
     records = db_session.execute(select(UploadedFile)).scalars().all()
 
@@ -127,19 +126,45 @@ def test_upload_endpoint_creates_metadata_record(monkeypatch, tmp_path, db_sessi
     assert records[0].stored_path.startswith("uploads/")
 
     course = db_session.execute(select(Course)).scalar_one()
-    assert course.name == "Prevención de riesgos"
-    assert course.hours_required == 20
-    assert str(course.deadline_date) == "2024-12-31"
+    assert course.name == "Reporte Moodle alumnos"
+    assert course.hours_required == 3
+    assert course.deadline_date.isoformat() == "2025-11-29"
 
-    student = db_session.execute(select(Student)).scalar_one()
-    assert student.email == "ada@example.com"
-    assert student.course == course.name
-    assert str(student.certificate_expires_at) == "2024-12-01"
+    students = db_session.execute(select(Student).order_by(Student.email)).scalars().all()
+    assert {student.email for student in students} == {"ana@example.com", "juan@example.com"}
+    assert students[0].full_name == "Ana García"
+    assert students[0].course == course.name
+    assert students[0].certificate_expires_at == course.deadline_date
+    assert students[1].full_name == "Juan Rodríguez"
+    assert students[1].certificate_expires_at == course.deadline_date
 
-    enrollment = db_session.execute(select(Enrollment)).scalar_one()
-    assert enrollment.course_id == course.id
-    assert enrollment.student_id == student.id
-    assert enrollment.progress_hours == pytest.approx(12.5)
-    assert enrollment.attributes["certificate_expires_at"] == "2024-12-01"
-    assert enrollment.attributes["course_deadline_date"] == "2024-12-31"
-    assert enrollment.attributes["telefono"] == "123456789"
+    enrollments = (
+        db_session.execute(select(Enrollment).order_by(Enrollment.student_id))
+        .scalars()
+        .all()
+    )
+    assert len(enrollments) == 2
+    progress_values = sorted(enrollment.progress_hours for enrollment in enrollments)
+    assert progress_values == pytest.approx([0.0, 2.25])
+    enrollment_map = {enrollment.student_id: enrollment for enrollment in enrollments}
+    enrollment_by_email = {
+        student.email: enrollment_map[student.id] for student in students
+    }
+    assert (
+        enrollment_by_email["ana@example.com"].attributes["raw_total_time"]
+        == "02h 15m 00s"
+    )
+    assert (
+        enrollment_by_email["ana@example.com"].attributes["first_access_at"].startswith(
+            "2025-10-21"
+        )
+    )
+    assert (
+        enrollment_by_email["juan@example.com"].attributes["raw_total_time"]
+        == "00h 00m 00s"
+    )
+    assert "first_access_at" not in enrollment_by_email["juan@example.com"].attributes
+    assert (
+        enrollment_by_email["ana@example.com"].attributes["course_deadline_date"]
+        == "2025-11-29"
+    )

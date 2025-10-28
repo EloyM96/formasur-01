@@ -7,10 +7,10 @@ Este manual describe con precisión todas las piezas incluidas en el MVP para la
 1. **Validación del fichero recibido**: el endpoint `POST /uploads` acepta exclusivamente ficheros `.xlsx`, comprueba el tamaño (máximo 5 MiB) y almacena el binario en `uploads/` antes de delegar en el cargador de cursos.【F:app/api/uploads.py†L28-L88】
 2. **Mapeo de columnas configurable**: el fichero se compara con el mapeo YAML `workflows/mappings/moodle_prl.yaml` para asegurar que se incluyen todas las columnas críticas (`Nombre completo`, `Email`, `Horas cursadas`, etc.).【F:workflows/mappings/moodle_prl.yaml†L1-L9】【F:app/modules/ingest/xlsx_importer.py†L28-L67】
 3. **Normalización y creación de entidades**:
-   - Los valores se limpian y tipan (fechas, horas, teléfonos) con `_normalize_row` para evitar nulos o formatos inválidos.【F:app/modules/ingest/course_loader.py†L97-L166】
-   - Se crean o actualizan cursos rellenando horas totales y fecha límite cuando el XLSX no lo aporta (se deducen de las horas cursadas o de la caducidad del certificado).【F:app/modules/ingest/course_loader.py†L42-L84】
-   - Se sincronizan estudiantes y matrículas, guardando atributos adicionales (teléfono, caducidades) en JSON para consultas posteriores.【F:app/modules/ingest/course_loader.py†L86-L142】
-4. **Resumen de ingesta**: el cargador devuelve contadores de cursos, estudiantes y matrículas creadas/actualizadas para mostrarlos inmediatamente tras la subida.【F:app/modules/ingest/course_loader.py†L18-L39】
+   - Los valores se limpian y tipan (fechas, horas, teléfonos) con `_normalize_row` para evitar nulos o formatos inválidos.【F:app/modules/ingest/course_loader.py†L287-L368】
+   - Se crean o actualizan cursos rellenando horas totales y fecha límite cuando el XLSX no lo aporta (se deducen de las horas cursadas o de la caducidad del certificado).【F:app/modules/ingest/course_loader.py†L43-L144】【F:app/modules/ingest/course_loader.py†L397-L487】
+   - Se sincronizan estudiantes y matrículas, guardando atributos adicionales (teléfono, caducidades) en JSON para consultas posteriores.【F:app/modules/ingest/course_loader.py†L145-L215】
+4. **Resumen de ingesta**: el cargador devuelve contadores de cursos, estudiantes y matrículas creadas/actualizadas para mostrarlos inmediatamente tras la subida.【F:app/modules/ingest/course_loader.py†L23-L94】
 
 ## 2. Modelo de datos relacional
 

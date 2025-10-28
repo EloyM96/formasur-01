@@ -79,7 +79,9 @@ async def upload_file(
     db.commit()
     db.refresh(upload)
 
-    result = course_loader.ingest_workbook(stored_path, db=db)
+    result = course_loader.ingest_workbook(
+        stored_path, db=db, workbook_label=file.filename
+    )
 
     return {
         "file": {

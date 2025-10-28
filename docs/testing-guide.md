@@ -26,19 +26,30 @@ Cuando quieras validar cambios en áreas específicas sin esperar a que termine 
 - Dispatcher de notificaciones: `pytest tests/test_dispatcher.py`. El flujo refleja las rutas principales de `app/notify/dispatcher.py`, incluyendo la orquestación de adaptadores y la coordinación con la cola RQ.【F:app/notify/dispatcher.py†L1-L200】
 - Motor de reglas: `pytest tests/test_rules_engine.py`. Ayuda a validar que las evaluaciones delegadas en `app/rules/engine.py` siguen siendo deterministas frente a nuevos playbooks.【F:app/rules/engine.py†L1-L200】
 - Cargador de hojas de cálculo: `pytest tests/test_uploads.py -k parse_xlsx` te permite comprobar rápidamente cambios en la ingesta de XLSX sin ejecutar escenarios completos.【F:app/modules/ingest/xlsx_importer.py†L1-L200】
+- End-to-end de subidas: `pytest tests/test_uploads.py` verifica el endpoint `/uploads`, la creación del registro `UploadedFile` y la normalización de tiempos a partir del reporte Moodle actualizado.【F:tests/test_uploads.py†L1-L156】
 
 ## 3. Datos de ejemplo para pruebas manuales
 
-- **XLSX de referencia**. Puedes generar uno siguiendo la misma plantilla que utiliza el fixture `valid_workbook` en los tests: crea un DataFrame con columnas como `Nombre completo`, `Email`, `Horas cursadas`, `Horas totales` y fechas ISO, luego exporta con `pandas.DataFrame.to_excel`. El fragmento exacto está en `tests/test_uploads.py` y sirve como guía.【F:tests/test_uploads.py†L52-L118】
-- **Playbook de ejemplo**. `workflows/playbooks/sample_prl_playbook.yaml` define un flujo completo con quiet hours y acciones `notify`. Puedes duplicarlo para crear variaciones rápidas ajustando el `cron` y las plantillas.【F:workflows/playbooks/sample_prl_playbook.yaml†L1-L44】
-- **Ruleset base**. `app/rules/rulesets/sample.yaml` ilustra cómo expresar reglas de caducidad y progresos en YAML.
+El repositorio incluye todos los artefactos necesarios para reproducir el flujo de ingestión sin depender de datos reales:
 
-Para validar un flujo extremo a extremo sin mover datos reales:
+- **Reporte Moodle actualizado** (`assets/moodle_report_example.xlsx`). Reproduce el formato exportado por Moodle con las columnas `Nombre`, `Apellidos`, `Correo`, `Primer acceso`, `Último acceso` y `Tiempo total`. La ingesta une nombre y apellidos, convierte la duración a horas decimales, estima las horas requeridas y la fecha límite a partir de la actividad registrada y persiste los accesos como atributos de matrícula.【F:workflows/mappings/moodle_prl.yaml†L1-L19】【F:app/modules/ingest/course_loader.py†L43-L215】【F:app/modules/ingest/course_loader.py†L397-L487】
+- **Vista previa ilustrativa** (`assets/moodle_report_preview.svg`). Úsala en sesiones de onboarding para que cualquier perfil identifique el aspecto esperado del fichero antes de subirlo.
+- **Playbook de ejemplo** (`workflows/playbooks/sample_prl_playbook.yaml`). Define un flujo completo con quiet hours y acciones `notify`; duplica el fichero para generar nuevas variantes.【F:workflows/playbooks/sample_prl_playbook.yaml†L1-L44】
+- **Ruleset base** (`app/rules/rulesets/sample.yaml`). Sirve como referencia para expresar reglas de caducidad y progreso en YAML.
 
-1. Carga el XLSX generado mediante `POST /uploads`.
-2. Ejecuta `POST /workflows/dry-run` con `sample_prl_playbook`.
-3. Revisa la respuesta y, si todo es correcto, lanza `POST /workflows/run`.
-4. Consulta `GET /notifications` para comprobar los registros generados; se utilizarán adaptadores “dummy” que escriben en memoria durante los tests.【F:tests/test_notifications_api.py†L1-L120】
+![Vista previa del reporte Moodle](assets/moodle_report_preview.svg)
+
+### 3.1 Personal con perfil técnico
+
+1. Copia `assets/moodle_report_example.xlsx` a una ruta temporal y, si necesitas simular otro curso, renombra el fichero; el nombre se utilizará como título del curso en base de datos.【F:app/modules/ingest/course_loader.py†L71-L144】
+2. Ejecuta `pytest tests/test_uploads.py` para validar la ingesta, la creación del registro `UploadedFile` y la conversión de tiempos a horas.【F:tests/test_uploads.py†L73-L156】
+3. Revisa el sumario devuelto en la consola: la previsualización mostrará las columnas originales y los contadores confirmarán cuántos cursos, estudiantes y matrículas se han creado.【F:app/modules/ingest/xlsx_importer.py†L1-L200】
+
+### 3.2 Personal sin perfil técnico
+
+1. Abre `assets/moodle_report_example.xlsx` y verifica que las cabeceras coinciden con la captura anterior; cualquier columna adicional debe añadirse al final para no romper el mapeo automático.
+2. Accede a la documentación interactiva de FastAPI (`http://localhost:8000/docs`) y utiliza el formulario del endpoint `POST /uploads` para seleccionar el fichero y lanzarlo sin necesidad de herramientas de línea de comandos.
+3. Al enviarlo, revisa la tarjeta de respuesta: el bloque `summary.preview` debe mostrar las primeras filas del reporte y `ingest.progress_hours` confirmará que las duraciones se han traducido correctamente.【F:app/api/uploads.py†L1-L88】
 
 ## 4. Verificación de integraciones externas
 

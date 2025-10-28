@@ -53,7 +53,7 @@ Este runbook guía a cualquier operario o responsable académico a través de la
 
 - **Errores en adaptadores**: aparecerán como `status="error"` en `notifications` y en `job_events`. El dispatcher incluye el mensaje del adaptador para facilitar la diagnosis.【F:app/notify/dispatcher.py†L197-L224】
 - **Quiet hours**: si la ejecución cae dentro de la ventana de silencio, el resumen indicará `skipped_quiet_hours`. Puedes relanzar el playbook fuera de horario o ajustar la configuración.
-- **Reprocesar XLSX**: basta con subir un fichero corregido; la ingesta es idempotente y actualiza registros existentes sin duplicados.【F:app/modules/ingest/course_loader.py†L42-L142】
+- **Reprocesar XLSX**: basta con subir un fichero corregido; la ingesta es idempotente y actualiza registros existentes sin duplicados.【F:app/modules/ingest/course_loader.py†L43-L215】
 
 ## 8. Checklist rápido antes de entregar resultados
 

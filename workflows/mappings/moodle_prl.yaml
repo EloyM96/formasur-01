@@ -1,9 +1,22 @@
+sheet_name: "reporte"
 columns:
-  full_name: "Nombre completo"
-  email: "Email"
-  certificate_expires_at: "Fecha caducidad"
-  telefono: "Teléfono"
-  course_name: "Curso"
-  course_hours_required: "Horas totales"
-  course_deadline_date: "Fecha caducidad curso"
-  progress_hours: "Horas cursadas"
+  first_name:
+    source: "Nombre"
+  last_name:
+    source: "Apellidos"
+  email:
+    source: "Correo"
+  first_access:
+    source: "Primer acceso"
+    required: false
+  last_access:
+    source: "Último acceso"
+    required: false
+  total_time:
+    source: "Tiempo total"
+defaults:
+  course_name: "Reporte Moodle {workbook_label}"
+  course_hours_required: "{default_course_hours_required}"
+  course_deadline_date: "{default_course_deadline_date}"
+  certificate_expires_at: "{default_certificate_expires_at}"
+  telefono: null

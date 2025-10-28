@@ -1,8 +1,9 @@
 """Workflow runner that evaluates playbooks and dispatches notifications."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from datetime import time
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -10,6 +11,7 @@ import pandas as pd
 import yaml
 
 from app.jobs.scheduler import QuietHours, Scheduler
+from app.modules.ingest import course_loader, xlsx_importer
 from app.notify.dispatcher import EvaluatedRow, NotificationDispatcher
 from app.queue import notification_queue
 from app.rules.engine import RuleSet
@@ -132,32 +134,49 @@ class WorkflowRunner:
     def _evaluate_rows(self, playbook: Playbook) -> Iterable[EvaluatedRow]:
         dataframe = self._load_dataframe(playbook)
         mapping = self._load_mapping(playbook.mapping_path)
-        rename_map = {value: key for key, value in mapping.get("columns", {}).items()}
-        dataframe = dataframe.rename(columns=rename_map)
+        column_map: dict[str, xlsx_importer.ColumnConfig] = mapping.get("columns", {})
+        defaults: dict[str, Any] = mapping.get("defaults", {})
+
+        context = course_loader.build_normalization_context(
+            file_path=playbook.source_path,
+            workbook_label=playbook.source_path.stem,
+            dataframe=dataframe,
+            column_map=column_map,
+            defaults=defaults,
+        )
+
         ruleset = RuleSet.from_yaml(playbook.ruleset_path)
 
-        for row in dataframe.to_dict(orient="records"):
-            cleaned_row = {key: self._normalize_value(value) for key, value in row.items()}
-            rule_results = ruleset.evaluate({"row": cleaned_row})
-            yield EvaluatedRow(row=cleaned_row, rule_results=rule_results)
+        for normalized in course_loader.iter_normalized_rows(
+            dataframe,
+            column_map=column_map,
+            defaults=defaults,
+            context=context,
+        ):
+            serialized = self._serialize_for_rules(normalized)
+            rule_results = ruleset.evaluate({"row": serialized})
+            yield EvaluatedRow(row=serialized, rule_results=rule_results)
 
     def _load_dataframe(self, playbook: Playbook) -> pd.DataFrame:
         return pd.read_excel(playbook.source_path, engine="openpyxl")
 
     def _load_mapping(self, mapping_path: Path) -> dict[str, Any]:
-        with mapping_path.open("r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-        if not isinstance(data, dict):
-            msg = "El mapeo debe ser un objeto YAML de primer nivel"
-            raise ValueError(msg)
-        return data
+        return xlsx_importer.load_mapping(mapping_path)
 
-    def _normalize_value(self, value: Any) -> Any:
-        if isinstance(value, pd.Timestamp):
-            return value.to_pydatetime().isoformat()
-        if pd.isna(value):  # type: ignore[arg-type]
-            return None
-        return value
+    def _serialize_for_rules(self, payload: dict[str, Any]) -> dict[str, Any]:
+        serialized: dict[str, Any] = {}
+        for key, value in payload.items():
+            if isinstance(value, pd.Timestamp):
+                serialized[key] = value.to_pydatetime().isoformat()
+            elif isinstance(value, datetime):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, date):
+                serialized[key] = value.isoformat()
+            elif isinstance(value, float) and math.isnan(value):  # pragma: no cover
+                serialized[key] = None
+            else:
+                serialized[key] = value
+        return serialized
 
     def _default_dispatcher_factory(self, playbook: Playbook) -> NotificationDispatcher:
         scheduler = Scheduler(quiet_hours=playbook.quiet_hours)

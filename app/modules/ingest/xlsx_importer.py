@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import pandas as pd
 
@@ -14,6 +15,14 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for offline test envs
 
 
 DEFAULT_MAPPING_PATH = Path(__file__).resolve().parents[3] / "workflows" / "mappings" / "moodle_prl.yaml"
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnConfig:
+    """Definition of how to extract a normalized field from the spreadsheet."""
+
+    sources: tuple[str, ...]
+    required: bool
 
 
 @dataclass(slots=True)
@@ -46,6 +55,46 @@ def _load_mapping(mapping_path: Path) -> dict[str, Any]:
     return data
 
 
+def _coerce_column_config(raw_value: Any) -> ColumnConfig:
+    if isinstance(raw_value, str):
+        return ColumnConfig(sources=(raw_value,), required=True)
+
+    if isinstance(raw_value, dict):
+        sources: Iterable[str] | None = raw_value.get("sources")
+        source = raw_value.get("source")
+        if sources is None and source:
+            sources = (source,)
+        if isinstance(sources, str):  # pragma: no cover - defensive
+            sources = (sources,)
+        if sources is None:
+            sources = tuple()
+        required = raw_value.get("required")
+        if required is None:
+            required = bool(tuple(sources))
+        return ColumnConfig(sources=tuple(sources), required=bool(required))
+
+    return ColumnConfig(sources=tuple(), required=False)
+
+
+def _resolve_mapping(raw_mapping: dict[str, Any]) -> dict[str, Any]:
+    columns = raw_mapping.get("columns") or {}
+    resolved_columns = {key: _coerce_column_config(value) for key, value in columns.items()}
+    return {
+        **raw_mapping,
+        "columns": resolved_columns,
+    }
+
+
+def _format_preview_value(value: Any) -> Any:
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
 def parse_xlsx(
     file_path: Path,
     *,
@@ -54,19 +103,46 @@ def parse_xlsx(
 ) -> ImportSummary:
     """Load a spreadsheet, validate required columns and produce a preview."""
 
-    effective_mapping_path = mapping_path or DEFAULT_MAPPING_PATH
-    mapping = _load_mapping(effective_mapping_path)
-    expected_columns = list((mapping.get("columns") or {}).values())
+    mapping = load_mapping(mapping_path)
+    sheet_name = mapping.get("sheet_name")
 
-    dataframe = pd.read_excel(file_path, engine="openpyxl")
+    try:
+        dataframe = pd.read_excel(
+            file_path,
+            engine="openpyxl",
+            sheet_name=sheet_name if sheet_name is not None else 0,
+        )
+    except ValueError as exc:
+        error = f"No se pudo leer la pestaña '{sheet_name}' del XLSX: {exc}"
+        return ImportSummary(total_rows=0, missing_columns=[], preview=[], errors=[error])
 
-    missing_columns = [column for column in expected_columns if column not in dataframe.columns]
+    column_configs: dict[str, ColumnConfig] = mapping.get("columns", {})
+
+    required_sources: list[str] = []
+    for config in column_configs.values():
+        if not config.required:
+            continue
+        required_sources.extend(config.sources)
+
+    missing_columns = [
+        column for column in required_sources if column not in dataframe.columns
+    ]
 
     errors: list[str] = []
     if missing_columns:
         errors.append("Columnas faltantes: " + ", ".join(missing_columns))
 
-    preview = dataframe.head(preview_rows).to_dict(orient="records")
+    preview_columns: list[str] = []
+    for config in column_configs.values():
+        for column in config.sources:
+            if column in dataframe.columns and column not in preview_columns:
+                preview_columns.append(column)
+
+    preview_df = dataframe.head(preview_rows)
+    if preview_columns:
+        preview_df = preview_df.loc[:, preview_columns]
+    preview_df = preview_df.fillna("")
+    preview = preview_df.map(_format_preview_value).to_dict(orient="records")
 
     return ImportSummary(
         total_rows=len(dataframe.index),
@@ -80,7 +156,8 @@ def load_mapping(mapping_path: Path | None = None) -> dict[str, Any]:
     """Expose mapping loading for consumers that need to read full datasets."""
 
     effective_mapping_path = mapping_path or DEFAULT_MAPPING_PATH
-    return _load_mapping(effective_mapping_path)
+    raw_mapping = _load_mapping(effective_mapping_path)
+    return _resolve_mapping(raw_mapping)
 
 
-__all__ = ["ImportSummary", "parse_xlsx", "load_mapping"]
+__all__ = ["ColumnConfig", "ImportSummary", "parse_xlsx", "load_mapping"]

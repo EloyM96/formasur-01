@@ -10,7 +10,7 @@ El backend está diseñado como un monolito organizado por dominios. Cada paquet
 - **Registro y contexto**. `app/logging.py` configura logging estructurado y funciones auxiliares para propagar IDs de job.
 - **API REST**. Los routers en `app/api/` exponen operaciones CRUD y endpoints de orquestación (`/courses`, `/students`, `/notifications`, `/uploads`, `/workflows`).【F:app/api/courses.py†L1-L199】【F:app/api/workflows.py†L1-L128】
 - **Servicios de dominio**. `app/services/` empaqueta lógica reutilizable (serialización de matrículas, evaluación de reglas, sincronización con Moodle).【F:app/services/enrollments.py†L1-L110】
-- **Ingesta**. `app/modules/ingest/` contiene funciones que validan XLSX, aplican mapeos YAML y crean entidades idempotentes.【F:app/modules/ingest/course_loader.py†L42-L142】
+- **Ingesta**. `app/modules/ingest/` contiene funciones que validan XLSX, aplican mapeos YAML y crean entidades idempotentes.【F:app/modules/ingest/course_loader.py†L43-L215】【F:app/modules/ingest/course_loader.py†L397-L487】
 - **Reglas**. `app/rules/engine.py` evalúa expresiones declarativas y ofrece `RuleSet.from_yaml` para cargar reglas desde ficheros.【F:app/rules/engine.py†L53-L81】
 - **Workflows**. `app/workflows/runner.py` interpreta playbooks YAML, aplica mapeos y construye el contexto que consumirá el dispatcher.【F:app/workflows/runner.py†L21-L132】
 - **Notificaciones**. `app/notify/dispatcher.py` resuelve adaptadores, respeta quiet hours y registra auditorías. Los adaptadores viven en `app/notify/adapters/` (SMTP, CLI, HTTP).【F:app/notify/dispatcher.py†L90-L224】
