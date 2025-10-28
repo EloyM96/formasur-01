@@ -1,0 +1,10 @@
+rules:
+  - id: vencido
+    description: "El certificado del alumno ya ha vencido"
+    when: "row['certificate_expires_at'] is not None and today() > parse_date(row['certificate_expires_at'])"
+  - id: vence_pronto
+    description: "El certificado vencerá en los próximos 15 días"
+    when: "row['certificate_expires_at'] is not None and 0 <= days_until(parse_date(row['certificate_expires_at'])) <= 15"
+  - id: horas_insuficientes
+    description: "La matrícula no alcanza las horas requeridas por el curso"
+    when: "row['hours_required'] is not None and row['progress_hours'] < row['hours_required']"
