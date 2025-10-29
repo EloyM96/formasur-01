@@ -102,7 +102,7 @@ El ejemplo anterior usa Jackson, pero cualquier librería JSON que lea desde `Sy
 ### 3.2 Otros orígenes (Prevengos, CRM, etc.)
 
 - Utiliza el mismo patrón que con Moodle: crea un cliente en `app/connectors/<nombre>/` con métodos claros, encapsula la lógica de mapeo en un servicio (`app/services/...`) y reutiliza `WorkflowRunner` para desencadenar acciones.
-- Documenta los contratos JSON o CSV en un fichero dentro de `docs/` o `workflows/` para que el resto del equipo conozca el formato esperado.
+- Documenta los contratos JSON o CSV en un fichero dentro de `docs/` o `workflows/` para que el resto del equipo conozca el formato esperado. Para Prevengos se ha añadido un paquete completo en `app/integrations/prevengos/` y un manual dedicado en `docs/prevengos-integration.md` que cubre CSV, API y SQL Server.【F:app/integrations/prevengos/__init__.py†L1-L17】【F:docs/prevengos-integration.md†L1-L124】
 
 ## 4. Buenas prácticas para becarios y extensiones Java
 
