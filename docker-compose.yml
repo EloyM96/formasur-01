@@ -10,7 +10,7 @@ services:
     volumes:
       - ./:/app
     depends_on:
-      - postgres
+      - sqlserver
       - redis
 
   redis:
@@ -18,16 +18,18 @@ services:
     ports:
       - "6379:6379"
 
-  postgres:
-    image: postgres:16-alpine
+  sqlserver:
+    build:
+      context: .
+      dockerfile: docker/sqlserver/Dockerfile
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SA_PASSWORD: ${SQLSERVER_SA_PASSWORD}
+      ACCEPT_EULA: "Y"
+      SQLSERVER_DB: ${SQLSERVER_DB}
     ports:
-      - "5432:5432"
+      - "1433:1433"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - sqlserver_data:/var/opt/mssql
 
 volumes:
-  postgres_data:
+  sqlserver_data:

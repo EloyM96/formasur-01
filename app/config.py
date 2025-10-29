@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     # Database
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/postgres"
+    database_url: str = (
+        "mssql+pyodbc://sa:Your_password123@localhost:1433/prl_notifier"
+        "?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+    )
 
     # Redis / Queue
     redis_url: str = "redis://localhost:6379/0"

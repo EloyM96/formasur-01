@@ -30,7 +30,7 @@ Visibilidad compartida de las tareas mínimas para arrancar el MVP y coordinar a
 | 8 | Adaptador WhatsApp dummy (CLI) | B4 | Validar contrato CLI con respuesta mockeada para becarios Java. |
 | 9 | RQ + Redis + backoff + quiet hours | B3 · B4 | Orquestar trabajos asíncronos respetando ventanas de silencio. |
 | 10 | Auditoría de notificaciones + UI | B1 · B2 | Pantalla para seguimiento y filtros básicos de envíos. |
-| 11 | Docker Compose (api/redis/postgres) | B3 · B4 | Facilitar entorno compartido reproducible para todo el equipo. |
+| 11 | Docker Compose (api/redis/sqlserver) | B3 · B4 | Facilitar entorno compartido reproducible para todo el equipo. |
 | 12 | Tests mínimos + CI | B5 | Pipeline inicial (lint + unit) ejecutándose en cada push. |
 
 ## Asignación rápida por persona
