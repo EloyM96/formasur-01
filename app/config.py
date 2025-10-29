@@ -29,5 +29,11 @@ class Settings(BaseSettings):
     moodle_rest_base_url: str | None = None
     moodle_soap_wsdl_url: str | None = None
 
+    # Prevengos integration
+    prevengos_csv_path: str = "data/prevengos/training_status.csv"
+    prevengos_api_base_url: str | None = None
+    prevengos_api_token: str | None = None
+    prevengos_db_dsn: str | None = None
+
 
 settings = Settings()
