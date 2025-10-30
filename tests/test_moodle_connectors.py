@@ -49,6 +49,22 @@ def test_rest_client_fetches_courses_with_token(monkeypatch):
     assert client._http_client.calls[0][1]["wstoken"] == "abc123"
 
 
+def test_rest_client_builds_criteria_parameters():
+    http_client = DummyHTTPClient([])
+    client = MoodleRESTClient(
+        base_url="https://moodle.example",
+        token="abc123",
+        enabled=True,
+        http_client=http_client,
+    )
+
+    client.fetch_courses(criteria=[{"key": "category", "value": 12}])
+
+    _, params = http_client.calls[0]
+    assert params["criteria[0][key]"] == "category"
+    assert params["criteria[0][value]"] == 12
+
+
 def test_rest_client_raises_when_disabled():
     client = MoodleRESTClient(
         base_url="https://moodle.example",
@@ -59,6 +75,36 @@ def test_rest_client_raises_when_disabled():
 
     with pytest.raises(MoodleAPIError):
         client.fetch_courses()
+
+
+def test_rest_client_raises_on_exception_payload():
+    client = MoodleRESTClient(
+        base_url="https://moodle.example",
+        token="abc123",
+        enabled=True,
+        http_client=DummyHTTPClient(
+            {"exception": "invalidtoken", "message": "Token incorrecto"}
+        ),
+    )
+
+    with pytest.raises(MoodleAPIError) as error:
+        client.fetch_courses()
+
+    assert "Token incorrecto" in str(error.value)
+
+
+def test_rest_client_raises_on_unexpected_payload_shape():
+    client = MoodleRESTClient(
+        base_url="https://moodle.example",
+        token="abc123",
+        enabled=True,
+        http_client=DummyHTTPClient({"status": "ok"}),
+    )
+
+    with pytest.raises(MoodleAPIError) as error:
+        client.fetch_courses()
+
+    assert "formato inesperado" in str(error.value)
 
 
 def test_soap_client_builds_envelope_with_token():
