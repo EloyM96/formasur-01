@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/postgres"
 
+    # External SQL bridge (optional)
+    external_sql_enabled: bool = False
+    external_sql_database_url: str | None = None
+    external_sql_echo: bool = False
+
     # Redis / Queue
     redis_url: str = "redis://localhost:6379/0"
     queue_url: str = "redis://localhost:6379/0"
