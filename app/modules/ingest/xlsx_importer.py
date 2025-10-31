@@ -13,8 +13,13 @@ try:  # pragma: no cover - dependency available in production environments
 except ModuleNotFoundError:  # pragma: no cover - fallback for offline test envs
     yaml = None
 
+from ...logging import get_logger
+
 
 DEFAULT_MAPPING_PATH = Path(__file__).resolve().parents[3] / "workflows" / "mappings" / "moodle_prl.yaml"
+
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +110,13 @@ def parse_xlsx(
 
     mapping = load_mapping(mapping_path)
     sheet_name = mapping.get("sheet_name")
+    context = {
+        "file_path": str(file_path),
+        "mapping_path": str(mapping_path or DEFAULT_MAPPING_PATH),
+        "sheet_name": sheet_name if sheet_name is not None else 0,
+    }
+
+    logger.info("ingest.xlsx.parse.start", **context)
 
     try:
         dataframe = pd.read_excel(
@@ -114,6 +126,7 @@ def parse_xlsx(
         )
     except ValueError as exc:
         error = f"No se pudo leer la pestaña '{sheet_name}' del XLSX: {exc}"
+        logger.error("ingest.xlsx.parse.failed", error=str(exc), **context)
         return ImportSummary(total_rows=0, missing_columns=[], preview=[], errors=[error])
 
     column_configs: dict[str, ColumnConfig] = mapping.get("columns", {})
@@ -144,12 +157,31 @@ def parse_xlsx(
     preview_df = preview_df.fillna("")
     preview = preview_df.map(_format_preview_value).to_dict(orient="records")
 
-    return ImportSummary(
+    summary = ImportSummary(
         total_rows=len(dataframe.index),
         missing_columns=missing_columns,
         preview=preview,
         errors=errors,
     )
+
+    if summary.errors:
+        logger.warning(
+            "ingest.xlsx.parse.invalid",
+            missing_columns=summary.missing_columns,
+            errors=summary.errors,
+            total_rows=summary.total_rows,
+            **context,
+        )
+    else:
+        logger.info(
+            "ingest.xlsx.parse.completed",
+            total_rows=summary.total_rows,
+            preview_rows=len(summary.preview),
+            missing_columns=len(summary.missing_columns),
+            **context,
+        )
+
+    return summary
 
 
 def load_mapping(mapping_path: Path | None = None) -> dict[str, Any]:

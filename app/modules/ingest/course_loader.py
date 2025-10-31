@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -11,6 +11,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...logging import get_logger
 from ...models import Course, Enrollment, Student
 from . import xlsx_importer
 
@@ -35,6 +36,9 @@ class LoaderResult:
     stats: LoaderStats
 
 
+logger = get_logger(__name__)
+
+
 def ingest_workbook(
     file_path: Path,
     db: Session,
@@ -44,33 +48,53 @@ def ingest_workbook(
 ) -> LoaderResult:
     """Persist Moodle enrollments after validating the spreadsheet structure."""
 
+    effective_mapping_path = mapping_path or xlsx_importer.DEFAULT_MAPPING_PATH
+    log_context = {
+        "file_path": str(file_path),
+        "mapping_path": str(effective_mapping_path),
+        "workbook_label": (workbook_label or file_path.name),
+    }
+
+    logger.info("ingest.workbook.start", **log_context)
+
     summary = xlsx_importer.parse_xlsx(
-        file_path, mapping_path=mapping_path, preview_rows=5
+        file_path, mapping_path=effective_mapping_path, preview_rows=5
     )
 
     stats = LoaderStats()
     if not summary.is_valid:
+        logger.warning(
+            "ingest.workbook.invalid",
+            errors=summary.errors,
+            missing_columns=summary.missing_columns,
+            total_rows=summary.total_rows,
+            **log_context,
+        )
         return LoaderResult(summary=summary, stats=stats)
 
-    mapping = xlsx_importer.load_mapping(mapping_path)
+    mapping = xlsx_importer.load_mapping(effective_mapping_path)
     column_map: dict[str, xlsx_importer.ColumnConfig] = mapping.get("columns", {})
     defaults: dict[str, Any] = mapping.get("defaults", {})
     sheet_name = mapping.get("sheet_name")
 
-    dataframe = pd.read_excel(
-        file_path,
-        engine="openpyxl",
-        sheet_name=sheet_name if sheet_name is not None else 0,
-    )
+    try:
+        dataframe = pd.read_excel(
+            file_path,
+            engine="openpyxl",
+            sheet_name=sheet_name if sheet_name is not None else 0,
+        )
+    except Exception as exc:  # pragma: no cover - surfacing unexpected read errors
+        logger.exception("ingest.workbook.read_failed", error=str(exc), **log_context)
+        raise
 
     label_source = workbook_label or file_path.name
-    context = {
+    row_context = {
         "workbook_stem": file_path.stem,
         "workbook_label": Path(label_source).stem,
     }
 
     for raw_row in dataframe.to_dict(orient="records"):
-        normalized = _normalize_row(raw_row, column_map, defaults, context)
+        normalized = _normalize_row(raw_row, column_map, defaults, row_context)
 
         email = normalized.get("email")
         if not email:
@@ -81,6 +105,15 @@ def ingest_workbook(
         _get_or_create_enrollment(db, normalized, student, course, stats)
 
     db.commit()
+
+    logger.info(
+        "ingest.workbook.completed",
+        stats=asdict(stats),
+        total_rows=summary.total_rows,
+        missing_columns=summary.missing_columns,
+        errors=summary.errors,
+        **log_context,
+    )
 
     return LoaderResult(summary=summary, stats=stats)
 
