@@ -11,6 +11,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from ..db import get_session
+from ..logging import get_logger
 from ..models import UploadedFile
 from ..modules.ingest import course_loader
 
@@ -21,6 +22,9 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MiB
 
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
+
+
+logger = get_logger(__name__)
 
 
 def _validate_extension(filename: str | None) -> str:
@@ -47,16 +51,46 @@ async def upload_file(
 ) -> dict[str, Any]:
     """Validate, persist and parse a Moodle PRL spreadsheet upload."""
 
-    extension = _validate_extension(file.filename)
+    logger.info(
+        "uploads.xlsx.received",
+        filename=file.filename,
+        content_type=file.content_type,
+    )
+
+    try:
+        extension = _validate_extension(file.filename)
+    except HTTPException:
+        logger.warning(
+            "uploads.xlsx.rejected",
+            filename=file.filename,
+            reason="invalid_extension",
+        )
+        raise
 
     contents = await file.read()
     file_size = len(contents)
+    logger.info(
+        "uploads.xlsx.buffered",
+        filename=file.filename,
+        size=file_size,
+    )
     if file_size == 0:
+        logger.warning(
+            "uploads.xlsx.rejected",
+            filename=file.filename,
+            reason="empty_file",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El fichero está vacío.",
         )
     if file_size > MAX_FILE_SIZE:
+        logger.warning(
+            "uploads.xlsx.rejected",
+            filename=file.filename,
+            reason="file_too_large",
+            size=file_size,
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El fichero supera el tamaño máximo permitido de 5MB.",
@@ -67,6 +101,13 @@ async def upload_file(
     stored_path = UPLOADS_DIR / stored_name
     stored_path.write_bytes(contents)
     await file.close()
+
+    logger.info(
+        "uploads.xlsx.saved",
+        filename=file.filename,
+        stored_path=str(stored_path),
+        size=file_size,
+    )
 
     upload = UploadedFile(
         original_name=file.filename,
@@ -79,8 +120,28 @@ async def upload_file(
     db.commit()
     db.refresh(upload)
 
-    result = course_loader.ingest_workbook(
-        stored_path, db=db, workbook_label=file.filename
+    try:
+        result = course_loader.ingest_workbook(
+            stored_path, db=db, workbook_label=file.filename
+        )
+    except Exception as exc:
+        logger.exception(
+            "uploads.xlsx.ingest_failed",
+            filename=file.filename,
+            stored_path=str(stored_path),
+            error=str(exc),
+        )
+        raise
+
+    summary = result.summary
+    logger.info(
+        "uploads.xlsx.ingest_completed",
+        filename=file.filename,
+        stored_path=str(stored_path),
+        total_rows=summary.total_rows,
+        missing_columns=summary.missing_columns,
+        errors=summary.errors,
+        stats=asdict(result.stats),
     )
 
     return {
