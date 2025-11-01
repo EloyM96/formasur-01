@@ -1,6 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import * as XLSX from "xlsx";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FileUploadForm } from "./FileUploadForm";
@@ -12,9 +11,17 @@ describe("FileUploadForm", () => {
 
   it("shows a success message when the upload API responds with 201", async () => {
     const mockResponse = {
-      name: "prl.xlsx",
-      size: 1024,
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      file: {
+        original_name: "prl.xlsx",
+        size: 1024,
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+      summary: {
+        total_rows: 0,
+        missing_columns: [],
+        preview: [],
+        errors: [],
+      },
     };
 
     vi.spyOn(global, "fetch").mockResolvedValue(
@@ -88,11 +95,32 @@ describe("FileUploadForm", () => {
     expect(await screen.findByText(/curso.xlsx/)).toBeInTheDocument();
   });
 
-  it("renders the students list when uploading an XLSX file", async () => {
+  it("renders the students list when the backend preview contains rows", async () => {
     const backendResponse = {
-      name: "reporte.xlsx",
-      size: 512,
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      file: {
+        original_name: "reporte.xlsx",
+        size: 512,
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+      summary: {
+        total_rows: 2,
+        missing_columns: [],
+        preview: [
+          {
+            Nombre: "María",
+            Apellidos: "Pérez",
+            Correo: "maria@example.com",
+            "Tiempo total": "01h 30m 00s",
+          },
+          {
+            Nombre: "Carlos",
+            Apellidos: "López",
+            Correo: "carlos@example.com",
+            "Tiempo total": "00h 45m 00s",
+          },
+        ],
+        errors: [],
+      },
     };
 
     vi.spyOn(global, "fetch").mockResolvedValue(
@@ -104,30 +132,12 @@ describe("FileUploadForm", () => {
       })
     );
 
-    const worksheet = XLSX.utils.json_to_sheet([
-      {
-        Nombre: "María",
-        Apellidos: "Pérez",
-        Correo: "maria@example.com",
-        "Tiempo total": "01h 30m 00s",
-      },
-      {
-        Nombre: "Carlos",
-        Apellidos: "López",
-        Correo: "carlos@example.com",
-        "Tiempo total": "00h 45m 00s",
-      },
-    ]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-
     render(<FileUploadForm />);
 
     const fileInput = screen.getByLabelText(/selecciona un fichero/i);
     const submitButton = screen.getByRole("button", { name: /subir fichero/i });
 
-    const excelFile = new File([excelBuffer], "reporte.xlsx", {
+    const excelFile = new File(["contenido"], "reporte.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
@@ -148,11 +158,25 @@ describe("FileUploadForm", () => {
     expect(screen.getByText("Se han detectado 2 alumnos en el curso.")).toBeInTheDocument();
   });
 
-  it("shows an error when the spreadsheet has no recognizable students", async () => {
+  it("shows an error when the backend preview lacks recognizable students", async () => {
     const backendResponse = {
-      name: "reporte.xlsx",
-      size: 512,
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      file: {
+        original_name: "reporte.xlsx",
+        size: 512,
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+      summary: {
+        total_rows: 1,
+        missing_columns: [],
+        preview: [
+          {
+            Nombre: "Ana",
+            Apellidos: "García",
+            Correo: "ana@example.com",
+          },
+        ],
+        errors: [],
+      },
     };
 
     vi.spyOn(global, "fetch").mockResolvedValue(
@@ -164,17 +188,7 @@ describe("FileUploadForm", () => {
       })
     );
 
-    const worksheet = XLSX.utils.json_to_sheet([
-      {
-        Nombre: "Ana",
-        Apellidos: "García",
-        Correo: "ana@example.com",
-      },
-    ]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const excelFile = new File([excelBuffer], "reporte.xlsx", {
+    const excelFile = new File(["contenido"], "reporte.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 

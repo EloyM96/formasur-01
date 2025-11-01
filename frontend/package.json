@@ -12,14 +12,12 @@
   "dependencies": {
     "next": "14.2.3",
     "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "xlsx": "^0.18.5"
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "6.4.3",
     "@testing-library/react": "14.3.1",
     "@testing-library/user-event": "14.5.2",
-    "@types/xlsx": "^0.18.5",
     "@vitejs/plugin-react": "4.2.1",
     "@types/node": "20.12.7",
     "@types/react": "18.2.79",
