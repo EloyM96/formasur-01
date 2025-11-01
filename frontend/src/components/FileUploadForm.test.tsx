@@ -86,4 +86,63 @@ describe("FileUploadForm", () => {
 
     expect(await screen.findByText(/curso.xlsx/)).toBeInTheDocument();
   });
+
+  it("renders the students list when uploading an XML file", async () => {
+    const backendResponse = {
+      name: "reporte.xml",
+      size: 512,
+      type: "text/xml",
+    };
+
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(backendResponse), {
+        status: 201,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+    );
+
+    const xmlContent = `
+      <alumnos>
+        <alumno>
+          <Nombre>María</Nombre>
+          <Apellidos>Pérez</Apellidos>
+          <Correo>maria@example.com</Correo>
+          <TiempoTotal>01h 30m 00s</TiempoTotal>
+        </alumno>
+        <alumno>
+          <Nombre>Carlos</Nombre>
+          <Apellidos>López</Apellidos>
+          <Correo>carlos@example.com</Correo>
+          <TiempoTotal>00h 45m 00s</TiempoTotal>
+        </alumno>
+      </alumnos>
+    `;
+
+    render(<FileUploadForm />);
+
+    const fileInput = screen.getByLabelText(/selecciona un fichero/i);
+    const submitButton = screen.getByRole("button", { name: /subir fichero/i });
+
+    const xmlFile = new File([xmlContent], "reporte.xml", { type: "text/xml" });
+
+    await userEvent.upload(fileInput, xmlFile);
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Carlos López")).toBeInTheDocument();
+    });
+
+    const studentItems = screen.getAllByRole("listitem");
+    expect(studentItems).toHaveLength(2);
+    expect(studentItems[0]).toHaveTextContent("Carlos López");
+    expect(studentItems[0]).toHaveTextContent("00h 45m 00s");
+    expect(studentItems[1]).toHaveTextContent("María Pérez");
+
+    expect(screen.getByRole("button", { name: "Contactar a Carlos López" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Se han detectado 2 alumnos en el curso.")
+    ).toBeInTheDocument();
+  });
 });
