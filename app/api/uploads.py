@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -109,9 +109,10 @@ async def upload_file(
         size=file_size,
     )
 
+    relative_path = PurePosixPath("uploads") / stored_name
     upload = UploadedFile(
         original_name=file.filename,
-        stored_path=str(Path("uploads") / stored_name),
+        stored_path=relative_path.as_posix(),
         mime=file.content_type or "application/octet-stream",
         size=file_size,
     )
