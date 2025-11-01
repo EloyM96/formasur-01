@@ -1,11 +1,7 @@
-"""Background jobs and schedulers."""
+"""Background jobs package."""
 
-from .moodle_sync import MoodleSyncJobDefinition, schedule_moodle_sync_jobs
-from .scheduler import QuietHours, Scheduler
+# Keep this module lightweight to avoid circular import issues. Import concrete
+# job or scheduler modules directly where needed instead of relying on
+# re-exported symbols at package level.
 
-__all__ = [
-    "MoodleSyncJobDefinition",
-    "QuietHours",
-    "Scheduler",
-    "schedule_moodle_sync_jobs",
-]
+__all__ = []
