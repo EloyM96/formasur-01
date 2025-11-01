@@ -16,6 +16,19 @@ export default function Home() {
         </section>
         <FileUploadForm />
         <section className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Explora los cursos disponibles</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            Consulta la oferta formativa cargada desde los ficheros y revisa su avance real directamente desde la
+            base de datos.
+          </p>
+          <Link
+            href="/courses"
+            className="mt-4 inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
+          >
+            Ver cursos
+          </Link>
+        </section>
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">Auditoría de notificaciones</h2>
           <p className="mt-2 text-sm text-slate-600">
             Consulta el histórico de envíos, filtra por canal y revisa el detalle de cada intento registrado en
