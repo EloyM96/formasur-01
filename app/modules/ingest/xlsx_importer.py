@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable
+from zipfile import BadZipFile
 
 import pandas as pd
 
@@ -12,6 +13,13 @@ try:  # pragma: no cover - dependency available in production environments
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - fallback for offline test envs
     yaml = None
+
+try:  # pragma: no cover - openpyxl provides this in production
+    from openpyxl.utils.exceptions import InvalidFileException
+except ImportError:  # pragma: no cover - degrade gracefully if openpyxl missing
+    class InvalidFileException(Exception):
+        """Fallback placeholder when ``openpyxl`` is not installed."""
+
 
 from ...logging import get_logger
 
@@ -126,6 +134,13 @@ def parse_xlsx(
         )
     except ValueError as exc:
         error = f"No se pudo leer la pestaña '{sheet_name}' del XLSX: {exc}"
+        logger.error("ingest.xlsx.parse.failed", error=str(exc), **context)
+        return ImportSummary(total_rows=0, missing_columns=[], preview=[], errors=[error])
+    except (OSError, BadZipFile, InvalidFileException, ImportError) as exc:
+        error = (
+            "No se pudo abrir el fichero XLSX. Verifica que el archivo no está corrupto "
+            f"y que utiliza un formato Excel válido. Detalle: {exc}"
+        )
         logger.error("ingest.xlsx.parse.failed", error=str(exc), **context)
         return ImportSummary(total_rows=0, missing_columns=[], preview=[], errors=[error])
 

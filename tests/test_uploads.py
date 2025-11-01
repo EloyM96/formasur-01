@@ -163,3 +163,28 @@ def test_upload_endpoint_creates_metadata_record(monkeypatch, tmp_path, db_sessi
         == "00h 00m 00s"
     )
     assert "first_access_at" not in enrollment_by_email["juan@example.com"].attributes
+
+
+def test_upload_endpoint_returns_summary_on_invalid_xlsx(monkeypatch, tmp_path, db_session):
+    monkeypatch.setattr(uploads_module, "UPLOADS_DIR", tmp_path / "uploads")
+
+    bogus_workbook = tmp_path / "broken.xlsx"
+    bogus_workbook.write_text("<xml>not really an excel file</xml>", encoding="utf-8")
+
+    spooled = SpooledTemporaryFile()
+    spooled.write(bogus_workbook.read_bytes())
+    spooled.seek(0)
+
+    headers = Headers({"content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"})
+    upload = UploadFile(file=spooled, filename="broken.xlsx", headers=headers)
+
+    payload = asyncio.run(uploads_module.upload_file(file=upload, db=db_session))
+
+    assert payload["summary"]["total_rows"] == 0
+    assert payload["summary"]["preview"] == []
+    assert payload["summary"]["missing_columns"] == []
+    assert payload["ingest"]["courses_created"] == 0
+    assert payload["ingest"]["students_created"] == 0
+    assert payload["ingest"]["enrollments_created"] == 0
+    assert payload["summary"]["errors"]
+    assert "No se pudo abrir el fichero XLSX" in payload["summary"]["errors"][0]
