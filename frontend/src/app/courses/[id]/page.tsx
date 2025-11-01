@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -129,14 +130,8 @@ export default async function CourseDetailPage({
   params: { id: string };
 }) {
   const courseId = Number.parseInt(params.id, 10);
-  if (Number.isNaN(courseId)) {
-    return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-8 px-6 py-10">
-        <p className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          El identificador del curso no es válido.
-        </p>
-      </main>
-    );
+  if (!params.id || Number.isNaN(courseId)) {
+    redirect("/courses");
   }
 
   const { data, error } = await loadCourse(courseId);
