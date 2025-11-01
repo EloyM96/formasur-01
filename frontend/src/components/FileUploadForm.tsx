@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import * as XLSX from "xlsx";
 
 type UploadResponse = {
   name: string;
   size: number;
   type: string;
+};
+
+type UploadSummary = {
+  totalRows: number;
+  missingColumns: string[];
+  preview: Record<string, unknown>[];
+  errors: string[];
 };
 
 type ParsedStudent = {
@@ -61,6 +67,35 @@ export function FileUploadForm() {
     return null;
   };
 
+  const extractUploadSummary = (payload: unknown): UploadSummary | null => {
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    if ("summary" in payload && payload.summary && typeof payload.summary === "object") {
+      const rawSummary = payload.summary as Record<string, unknown>;
+      const preview = Array.isArray(rawSummary.preview)
+        ? (rawSummary.preview as Record<string, unknown>[])
+        : [];
+      const missingColumns = Array.isArray(rawSummary.missing_columns)
+        ? (rawSummary.missing_columns as unknown[]).filter((value): value is string => typeof value === "string")
+        : [];
+      const errors = Array.isArray(rawSummary.errors)
+        ? (rawSummary.errors as unknown[]).filter((value): value is string => typeof value === "string")
+        : [];
+      const totalRows = typeof rawSummary.total_rows === "number" ? rawSummary.total_rows : 0;
+
+      return {
+        totalRows,
+        missingColumns,
+        preview,
+        errors,
+      } satisfies UploadSummary;
+    }
+
+    return null;
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -93,24 +128,30 @@ export function FileUploadForm() {
       const contentType = response.headers.get("content-type") ?? "";
       let parsed: UploadResponse | null = null;
 
+      let summary: UploadSummary | null = null;
+
       if (contentType.includes("application/json")) {
         const payload = (await response.json()) as unknown;
         parsed = extractUploadMetadata(payload);
+        summary = extractUploadSummary(payload);
       }
 
-      const shouldParseSpreadsheet = shouldParseAsSpreadsheet(file);
+      if (summary) {
+        if (summary.errors.length > 0) {
+          setStatus("error");
+          const missingColumnsMessage =
+            summary.missingColumns.length > 0
+              ? ` Columnas faltantes: ${summary.missingColumns.join(", ")}.`
+              : "";
+          setMessage(`${summary.errors.join(" ")}${missingColumnsMessage}`.trim());
+          setStudents([]);
+          setResult(parsed);
+          return;
+        }
 
-      if (shouldParseSpreadsheet) {
-        try {
-          const parsedStudents = await parseStudentsFromSpreadsheet(file);
+        const parsedStudents = parseStudentsFromPreview(summary.preview);
 
-          if (parsedStudents.length === 0) {
-            setStatus("error");
-            setMessage("No se encontraron alumnos en el fichero XLSX proporcionado.");
-            setStudents([]);
-            return;
-          }
-
+        if (parsedStudents.length > 0) {
           setStatus("success");
           setStudents(parsedStudents);
           setMessage(
@@ -121,11 +162,13 @@ export function FileUploadForm() {
           setResult(null);
           formElement.reset();
           return;
-        } catch (parseError) {
-          console.error(parseError);
+        }
+
+        if (summary.preview.length > 0) {
           setStatus("error");
-          setMessage("No se pudo leer el fichero XLSX. Verifica el formato e inténtalo de nuevo.");
+          setMessage("No se encontraron alumnos en el fichero XLSX proporcionado.");
           setStudents([]);
+          setResult(parsed);
           return;
         }
       }
@@ -224,23 +267,7 @@ export function FileUploadForm() {
   );
 }
 
-async function parseStudentsFromSpreadsheet(file: File): Promise<ParsedStudent[]> {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: "array" });
-  if (!workbook.SheetNames.length) {
-    return [];
-  }
-
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) {
-    return [];
-  }
-
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-    defval: "",
-    raw: false,
-  });
-
+function parseStudentsFromPreview(rows: Record<string, unknown>[]): ParsedStudent[] {
   const parsed = rows
     .map((row) => {
       const firstName = getCellValue(row, [
@@ -331,18 +358,6 @@ function getCellValue(row: Record<string, unknown>, candidateNames: string[]): s
   }
 
   return "";
-}
-
-function shouldParseAsSpreadsheet(file: File): boolean {
-  const normalizedType = file.type.toLowerCase();
-  const normalizedName = file.name.toLowerCase();
-
-  return (
-    normalizedType.includes("spreadsheet") ||
-    normalizedType.includes("excel") ||
-    normalizedName.endsWith(".xlsx") ||
-    normalizedName.endsWith(".xls")
-  );
 }
 
 function parseDurationToSeconds(input: string): number {
