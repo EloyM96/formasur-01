@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as XLSX from "xlsx";
 
 type UploadResponse = {
   name: string;
@@ -97,17 +98,15 @@ export function FileUploadForm() {
         parsed = extractUploadMetadata(payload);
       }
 
-      const shouldParseXml =
-        file.type.toLowerCase().includes("xml") || file.name.toLowerCase().endsWith(".xml");
+      const shouldParseSpreadsheet = shouldParseAsSpreadsheet(file);
 
-      if (shouldParseXml) {
+      if (shouldParseSpreadsheet) {
         try {
-          const xmlText = await file.text();
-          const parsedStudents = parseStudentsFromXml(xmlText);
+          const parsedStudents = await parseStudentsFromSpreadsheet(file);
 
           if (parsedStudents.length === 0) {
             setStatus("error");
-            setMessage("No se encontraron alumnos en el fichero XML proporcionado.");
+            setMessage("No se encontraron alumnos en el fichero XLSX proporcionado.");
             setStudents([]);
             return;
           }
@@ -125,7 +124,7 @@ export function FileUploadForm() {
         } catch (parseError) {
           console.error(parseError);
           setStatus("error");
-          setMessage("No se pudo leer el fichero XML. Verifica el formato e inténtalo de nuevo.");
+          setMessage("No se pudo leer el fichero XLSX. Verifica el formato e inténtalo de nuevo.");
           setStudents([]);
           return;
         }
@@ -155,7 +154,7 @@ export function FileUploadForm() {
           type="file"
           id="file"
           name="file"
-          accept=".csv,.xlsx,.xls,.json,.xml"
+          accept=".xlsx,.xls"
           required
         />
       </div>
@@ -225,49 +224,63 @@ export function FileUploadForm() {
   );
 }
 
-function parseStudentsFromXml(xmlText: string): ParsedStudent[] {
-  const parser = new DOMParser();
-  const document = parser.parseFromString(xmlText, "application/xml");
-  if (document.querySelector("parsererror")) {
-    throw new Error("Invalid XML content");
+async function parseStudentsFromSpreadsheet(file: File): Promise<ParsedStudent[]> {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  if (!workbook.SheetNames.length) {
+    return [];
   }
 
-  const rowSelectors = ["student", "alumno", "row", "registro", "entry", "matricula"];
-  const lowerRowSelectors = rowSelectors.map((selector) => selector.toLowerCase());
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) {
+    return [];
+  }
 
-  let rows: Element[] = [];
-  for (const selector of lowerRowSelectors) {
-    rows = rows.concat(Array.from(document.getElementsByTagName(selector)));
-  }
-  if (rows.length === 0 && document.documentElement) {
-    rows = Array.from(document.documentElement.children);
-  }
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    defval: "",
+    raw: false,
+  });
 
   const parsed = rows
     .map((row) => {
-      const firstName = getNodeValue(row, ["nombre", "name", "firstname", "first_name"]);
-      const lastName = getNodeValue(row, ["apellidos", "apellido", "lastname", "last_name", "surnames"]);
-      let fullName = `${firstName} ${lastName}`.trim();
-      if (!fullName || fullName === "undefined" || fullName === "null") {
-        fullName = getNodeValue(row, ["full_name", "nombre_completo", "fullname", "alumno", "studentname"]);
-      }
-      const email = getNodeValue(row, [
-        "correo",
-        "email",
-        "mail",
-        "correo_electronico",
-        "correo-electronico",
-        "emailaddress",
+      const firstName = getCellValue(row, [
+        "Nombre",
+        "Nombre(s)",
+        "Nombre alumno",
+        "First name",
+        "Nombre estudiante",
       ]);
-      const timeValue = getNodeValue(row, [
-        "tiempo_total",
-        "tiempototal",
-        "total_time",
-        "tiempo",
-        "duration",
-        "duracion",
-        "totalhours",
-        "horas",
+      const lastName = getCellValue(row, [
+        "Apellidos",
+        "Apellido",
+        "Last name",
+        "Apellidos alumno",
+      ]);
+      let fullName = `${firstName} ${lastName}`.trim();
+      if (!fullName) {
+        fullName = getCellValue(row, [
+          "Nombre completo",
+          "Nombre y apellidos",
+          "Full name",
+          "Alumno",
+        ]);
+      }
+
+      const email = getCellValue(row, [
+        "Correo",
+        "Correo electrónico",
+        "Correo electronico",
+        "Email",
+        "Email address",
+      ]);
+
+      const timeValue = getCellValue(row, [
+        "Tiempo total",
+        "Tiempo Total",
+        "Tiempo total en el curso",
+        "Tiempo total (curso)",
+        "Total time",
+        "Duración",
       ]);
 
       if (!fullName || !timeValue) {
@@ -289,34 +302,47 @@ function parseStudentsFromXml(xmlText: string): ParsedStudent[] {
   return parsed.sort((a, b) => a.totalSeconds - b.totalSeconds);
 }
 
-function getNodeValue(node: Element, candidateNames: string[]): string {
-  const lowered = candidateNames.map((name) => name.toLowerCase());
+function getCellValue(row: Record<string, unknown>, candidateNames: string[]): string {
+  const entries = Object.entries(row).map(([key, value]) => [key.trim().toLowerCase(), value] as const);
 
-  for (const child of Array.from(node.children)) {
-    const tagName = child.tagName.toLowerCase();
-    if (lowered.includes(tagName)) {
-      const text = child.textContent?.trim();
-      if (text) {
-        return text;
+  for (const candidate of candidateNames) {
+    const normalizedCandidate = candidate.trim().toLowerCase();
+
+    for (const [key, value] of entries) {
+      if (key !== normalizedCandidate) {
+        continue;
+      }
+
+      if (value === null || value === undefined) {
+        continue;
+      }
+
+      if (typeof value === "number") {
+        return value.toString();
+      }
+
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (trimmed) {
+          return trimmed;
+        }
       }
     }
   }
 
-  for (const name of lowered) {
-    const attribute = node.getAttribute(name);
-    if (attribute && attribute.trim()) {
-      return attribute.trim();
-    }
-  }
-
-  const nested = Array.from(node.getElementsByTagName("*")).find((element) =>
-    lowered.includes(element.tagName.toLowerCase())
-  );
-  if (nested) {
-    return nested.textContent?.trim() ?? "";
-  }
-
   return "";
+}
+
+function shouldParseAsSpreadsheet(file: File): boolean {
+  const normalizedType = file.type.toLowerCase();
+  const normalizedName = file.name.toLowerCase();
+
+  return (
+    normalizedType.includes("spreadsheet") ||
+    normalizedType.includes("excel") ||
+    normalizedName.endsWith(".xlsx") ||
+    normalizedName.endsWith(".xls")
+  );
 }
 
 function parseDurationToSeconds(input: string): number {
