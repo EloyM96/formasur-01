@@ -13,9 +13,49 @@ export function FileUploadForm() {
   const [message, setMessage] = useState<string>("");
   const [result, setResult] = useState<UploadResponse | null>(null);
 
+  const extractUploadMetadata = (payload: unknown): UploadResponse | null => {
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    const maybeDirect = payload as Partial<UploadResponse>;
+    if (typeof maybeDirect.name === "string" && typeof maybeDirect.size === "number") {
+      return {
+        name: maybeDirect.name,
+        size: maybeDirect.size,
+        type: maybeDirect.type ?? "",
+      } satisfies UploadResponse;
+    }
+
+    if ("file" in payload && payload.file && typeof payload.file === "object") {
+      const fileInfo = payload.file as Record<string, unknown>;
+      const name = typeof fileInfo.original_name === "string" ? fileInfo.original_name : "";
+      const size = typeof fileInfo.size === "number" ? fileInfo.size : 0;
+      const type =
+        typeof fileInfo.mime === "string"
+          ? fileInfo.mime
+          : typeof fileInfo.type === "string"
+            ? fileInfo.type
+            : "";
+
+      if (!name && !size && !type) {
+        return null;
+      }
+
+      return {
+        name,
+        size,
+        type,
+      } satisfies UploadResponse;
+    }
+
+    return null;
+  };
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const formData = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
@@ -39,11 +79,18 @@ export function FileUploadForm() {
         throw new Error("La API respondió con un error");
       }
 
-      const json = (await response.json()) as UploadResponse;
+      const contentType = response.headers.get("content-type") ?? "";
+      let parsed: UploadResponse | null = null;
+
+      if (contentType.includes("application/json")) {
+        const payload = (await response.json()) as unknown;
+        parsed = extractUploadMetadata(payload);
+      }
+
       setStatus("success");
-      setResult(json);
+      setResult(parsed);
       setMessage("Subida completada correctamente.");
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (error) {
       console.error(error);
       setStatus("error");
