@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import * as XLSX from "xlsx";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FileUploadForm } from "./FileUploadForm";
@@ -87,11 +88,11 @@ describe("FileUploadForm", () => {
     expect(await screen.findByText(/curso.xlsx/)).toBeInTheDocument();
   });
 
-  it("renders the students list when uploading an XML file", async () => {
+  it("renders the students list when uploading an XLSX file", async () => {
     const backendResponse = {
-      name: "reporte.xml",
+      name: "reporte.xlsx",
       size: 512,
-      type: "text/xml",
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     };
 
     vi.spyOn(global, "fetch").mockResolvedValue(
@@ -103,31 +104,34 @@ describe("FileUploadForm", () => {
       })
     );
 
-    const xmlContent = `
-      <alumnos>
-        <alumno>
-          <Nombre>María</Nombre>
-          <Apellidos>Pérez</Apellidos>
-          <Correo>maria@example.com</Correo>
-          <TiempoTotal>01h 30m 00s</TiempoTotal>
-        </alumno>
-        <alumno>
-          <Nombre>Carlos</Nombre>
-          <Apellidos>López</Apellidos>
-          <Correo>carlos@example.com</Correo>
-          <TiempoTotal>00h 45m 00s</TiempoTotal>
-        </alumno>
-      </alumnos>
-    `;
+    const worksheet = XLSX.utils.json_to_sheet([
+      {
+        Nombre: "María",
+        Apellidos: "Pérez",
+        Correo: "maria@example.com",
+        "Tiempo total": "01h 30m 00s",
+      },
+      {
+        Nombre: "Carlos",
+        Apellidos: "López",
+        Correo: "carlos@example.com",
+        "Tiempo total": "00h 45m 00s",
+      },
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
 
     render(<FileUploadForm />);
 
     const fileInput = screen.getByLabelText(/selecciona un fichero/i);
     const submitButton = screen.getByRole("button", { name: /subir fichero/i });
 
-    const xmlFile = new File([xmlContent], "reporte.xml", { type: "text/xml" });
+    const excelFile = new File([excelBuffer], "reporte.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
 
-    await userEvent.upload(fileInput, xmlFile);
+    await userEvent.upload(fileInput, excelFile);
     await userEvent.click(submitButton);
 
     await waitFor(() => {
@@ -141,8 +145,51 @@ describe("FileUploadForm", () => {
     expect(studentItems[1]).toHaveTextContent("María Pérez");
 
     expect(screen.getByRole("button", { name: "Contactar a Carlos López" })).toBeInTheDocument();
-    expect(
-      screen.getByText("Se han detectado 2 alumnos en el curso.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Se han detectado 2 alumnos en el curso.")).toBeInTheDocument();
+  });
+
+  it("shows an error when the spreadsheet has no recognizable students", async () => {
+    const backendResponse = {
+      name: "reporte.xlsx",
+      size: 512,
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    };
+
+    vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(backendResponse), {
+        status: 201,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+    );
+
+    const worksheet = XLSX.utils.json_to_sheet([
+      {
+        Nombre: "Ana",
+        Apellidos: "García",
+        Correo: "ana@example.com",
+      },
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte");
+    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const excelFile = new File([excelBuffer], "reporte.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+
+    render(<FileUploadForm />);
+
+    const fileInput = screen.getByLabelText(/selecciona un fichero/i);
+    const submitButton = screen.getByRole("button", { name: /subir fichero/i });
+
+    await userEvent.upload(fileInput, excelFile);
+    await userEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No se encontraron alumnos en el fichero XLSX proporcionado.")
+      ).toBeInTheDocument();
+    });
   });
 });
