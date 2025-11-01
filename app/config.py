@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     # Database
-    database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/postgres"
+    database_url: str = "sqlite:///./data/prl_notifier.db"
 
     # External SQL bridge (optional)
     external_sql_enabled: bool = False
